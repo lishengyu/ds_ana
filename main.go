@@ -20,7 +20,7 @@ var (
 
 func main() {
 
-	flag.StringVar(&gPath, "s", "", "数安话单文件路径，各话单路径参考被准格式查找, 示例: /home/udpi_log")
+	flag.StringVar(&gPath, "s", "", "数安话单文件路径，各话单路径参考标准格式查找, 示例: /home/udpi_log")
 	flag.StringVar(&C0Path, "c0", "", "逐一指定话单文件路径，数安识别话单文件路径")
 	flag.StringVar(&C1Path, "c1", "", "逐一指定话单文件路径，数安监测话单文件路径")
 	flag.StringVar(&C3Path, "c3", "", "逐一指定话单文件路径，数安取证文件路径")
