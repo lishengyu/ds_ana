@@ -2,6 +2,7 @@ package fileproc
 
 import (
 	"archive/tar"
+	"bufio"
 	"compress/gzip"
 	"fmt"
 	"io"
@@ -78,6 +79,7 @@ var (
 
 	C0_CheckMap map[string]CheckInfo //识别话单必填项校验
 	C1_CheckMap map[string]CheckInfo //监测话单必填项校验
+	C4_CheckMap map[string]CheckInfo //关键字话单必填项校验
 	SampleMap   sync.Map
 )
 
@@ -489,6 +491,14 @@ func procC1Fields(fs []string) (int, bool) {
 	return 0, true
 }
 
+func procC4Fields(fs []string) (int, bool) {
+	if valid := fieldsMd5(fs[global.C4_FileMD5], global.IndexC4); !valid {
+		return global.C4_FileMD5, false
+	}
+
+	return 0, true
+}
+
 func recordC0Info(fs []string) {
 	datainfoGroup, _ := strconv.Atoi(fs[global.C0_DataInfoNum])
 	var data string
@@ -539,16 +549,22 @@ func recordC1Info(fs []string) {
 	return
 }
 
-func procC0Ctx(ctx, filename string) {
-	fields := strings.Split(ctx, "\n")
-	for _, line := range fields {
-		incLogAllCnt(global.IndexC0)
-		if line == "" {
-			incLogNullCnt(global.IndexC0)
-			continue
+func procC0Ctx(line, filename string) {
+	fs := strings.Split(line, "|")
+	if len(fs) < 24 {
+		//fmt.Printf("invalid log:[%s]\n", line)
+		info := CheckInfo{
+			Reason:   fmt.Sprintf("字段个数%d不符", len(fs)),
+			Filenmae: filename,
 		}
-		fs := strings.Split(line, "|")
-		if len(fs) < 24 {
+		C0_CheckMap[line] = info
+		incLogInvalidCnt(global.IndexC0)
+		return
+	}
+	datainfoGroup, _ := strconv.Atoi(fs[global.C0_DataInfoNum])
+	if datainfoGroup > 1 {
+		nums := 24 + (datainfoGroup-1)*3
+		if len(fs) != nums {
 			//fmt.Printf("invalid log:[%s]\n", line)
 			info := CheckInfo{
 				Reason:   fmt.Sprintf("字段个数%d不符", len(fs)),
@@ -556,82 +572,61 @@ func procC0Ctx(ctx, filename string) {
 			}
 			C0_CheckMap[line] = info
 			incLogInvalidCnt(global.IndexC0)
-			continue
+			return
 		}
-		datainfoGroup, _ := strconv.Atoi(fs[global.C0_DataInfoNum])
-		if datainfoGroup > 1 {
-			nums := 24 + (datainfoGroup-1)*3
-			if len(fs) != nums {
-				//fmt.Printf("invalid log:[%s]\n", line)
-				info := CheckInfo{
-					Reason:   fmt.Sprintf("字段个数%d不符", len(fs)),
-					Filenmae: filename,
-				}
-				C0_CheckMap[line] = info
-				incLogInvalidCnt(global.IndexC0)
-				continue
-			}
-		} else {
-			if len(fs) != 24 {
-				//fmt.Printf("invalid log:[%s]\n", line)
-				info := CheckInfo{
-					Reason:   fmt.Sprintf("字段个数%d不符", len(fs)),
-					Filenmae: filename,
-				}
-				C0_CheckMap[line] = info
-				incLogInvalidCnt(global.IndexC0)
-				continue
-			}
-		}
-
-		if index, valid := procC0Fields(fs); valid {
-			recordC0Info(fs)
-			incLogValidCnt(global.IndexC0)
-		} else {
+	} else {
+		if len(fs) != 24 {
 			//fmt.Printf("invalid log:[%s]\n", line)
 			info := CheckInfo{
-				Reason:   fmt.Sprintf("第%d个字段非法", index+1),
+				Reason:   fmt.Sprintf("字段个数%d不符", len(fs)),
 				Filenmae: filename,
 			}
 			C0_CheckMap[line] = info
 			incLogInvalidCnt(global.IndexC0)
+			return
 		}
 	}
+
+	if index, valid := procC0Fields(fs); valid {
+		recordC0Info(fs)
+		incLogValidCnt(global.IndexC0)
+	} else {
+		//fmt.Printf("invalid log:[%s]\n", line)
+		info := CheckInfo{
+			Reason:   fmt.Sprintf("第%d个字段非法", index+1),
+			Filenmae: filename,
+		}
+		C0_CheckMap[line] = info
+		incLogInvalidCnt(global.IndexC0)
+	}
+
 	return
 }
 
-func procC1Ctx(ctx, filename string) {
-	fields := strings.Split(ctx, "\n")
-	for _, line := range fields {
-		incLogAllCnt(global.IndexC1)
-		if line == "" {
-			incLogNullCnt(global.IndexC1)
-			continue
+func procC1Ctx(line, filename string) {
+	fs := strings.Split(line, "|")
+	if len(fs) != 21 {
+		//fmt.Printf("invalid log:[%s]\n", line)
+		info := CheckInfo{
+			Reason:   fmt.Sprintf("字段个数%d不符", len(fs)),
+			Filenmae: filename,
 		}
-		fs := strings.Split(line, "|")
-		if len(fs) != 21 {
-			//fmt.Printf("invalid log:[%s]\n", line)
-			info := CheckInfo{
-				Reason:   fmt.Sprintf("字段个数%d不符", len(fs)),
-				Filenmae: filename,
-			}
-			C1_CheckMap[line] = info
-			incLogInvalidCnt(global.IndexC1)
-			continue
-		}
+		C1_CheckMap[line] = info
+		incLogInvalidCnt(global.IndexC1)
+		return
+	}
 
-		if index, valid := procC1Fields(fs); valid {
-			recordC1Info(fs)
-			incLogValidCnt(global.IndexC1)
-		} else {
-			//fmt.Printf("invalid log:[%s]\n", line)
-			info := CheckInfo{
-				Reason:   fmt.Sprintf("第%d个字段非法", index+1),
-				Filenmae: filename,
-			}
-			C1_CheckMap[line] = info
-			incLogInvalidCnt(global.IndexC1)
+	if index, valid := procC1Fields(fs); valid {
+		recordC1Info(fs)
+		incLogValidCnt(global.IndexC1)
+	} else {
+		//fmt.Printf("invalid log:[%s]\n", line)
+		info := CheckInfo{
+			Reason:   fmt.Sprintf("第%d个字段非法", index+1),
+			Filenmae: filename,
 		}
+		C1_CheckMap[line] = info
+		incLogInvalidCnt(global.IndexC1)
 	}
 	return
 }
@@ -644,11 +639,34 @@ func procC3Ctx(ctx, filename string) {
 
 }
 
-func procC4Ctx(ctx, filename string) {
+func procC4Ctx(line, filename string) {
+	fs := strings.Split(line, "|")
+	if len(fs) != 20 {
+		//fmt.Printf("invalid log:[%s]\n", line)
+		info := CheckInfo{
+			Reason:   fmt.Sprintf("字段个数%d不符", len(fs)),
+			Filenmae: filename,
+		}
+		C4_CheckMap[line] = info
+		incLogInvalidCnt(global.IndexC4)
+		return
+	}
 
+	if index, valid := procC4Fields(fs); valid {
+		incLogValidCnt(global.IndexC4)
+	} else {
+		//fmt.Printf("invalid log:[%s]\n", line)
+		info := CheckInfo{
+			Reason:   fmt.Sprintf("第%d个字段非法", index+1),
+			Filenmae: filename,
+		}
+		C4_CheckMap[line] = info
+		incLogInvalidCnt(global.IndexC4)
+	}
+	return
 }
 
-func procData(ctx string, logType int, filename string) error {
+func procLogData(ctx string, logType int, filename string) error {
 	switch logType {
 	case global.IndexC0:
 		procC0Ctx(ctx, filename)
@@ -698,22 +716,20 @@ func procTargzFile(filename string, logType int) error {
 			return err
 		}
 
-		// 读取文件内容
-		if header.Typeflag == tar.TypeReg {
-			data := make([]byte, header.Size)
-			n, err := tr.Read(data)
-			if err != nil && err != io.EOF {
-				fmt.Println("Error reading file content:", err)
-				break
+		if header.Typeflag != tar.TypeReg {
+			continue
+		}
+
+		scanner := bufio.NewScanner(tr)
+
+		for scanner.Scan() {
+			line := scanner.Text()
+			incLogAllCnt(logType)
+			if line == "" {
+				incLogNullCnt(logType)
+				continue
 			}
-			if n == 0 {
-				break
-			}
-			err = procData(string(data), logType, filename)
-			if err != nil {
-				fmt.Println("Error proc file content:", err)
-				return err
-			}
+			procLogData(line, logType, filename)
 		}
 	}
 
@@ -829,4 +845,5 @@ func AnalyzeLogFile(c0, c1, c3, c4, dst string) {
 func init() {
 	C0_CheckMap = make(map[string]CheckInfo)
 	C1_CheckMap = make(map[string]CheckInfo)
+	C4_CheckMap = make(map[string]CheckInfo)
 }

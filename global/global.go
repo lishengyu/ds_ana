@@ -9,7 +9,7 @@ const (
 	IdentifyName = "ds_data_identify"
 	MonitorName  = "ds_data_monitor"
 	EvidenceName = "ds_evidence_file"
-	KeywordName  = "ds_data_keyword"
+	KeywordName  = "ds_keyword_file"
 )
 
 const (
@@ -78,6 +78,7 @@ const (
 const (
 	C4_CommandId = iota
 	C4_LogID
+	C4_HouseID
 	C4_StrategyId
 	C4_KeyWord
 	C4_Features

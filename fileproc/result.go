@@ -5,6 +5,7 @@ import (
 	"ds_ana/global"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/xuri/excelize/v2"
@@ -127,8 +128,9 @@ func CheckMd5(ex *excelize.File, index int) {
 		record++
 		_, ok1 := Md5Map[global.IndexC0].Load(key)
 		_, ok2 := Md5Map[global.IndexC1].Load(key)
+		_, ok3 := Md5Map[global.IndexC4].Load(key)
 
-		if ok1 && ok2 {
+		if (ok1 && ok2) || ok3 {
 			return true
 		}
 
@@ -288,7 +290,7 @@ func checkDict(ex *excelize.File, m sync.Map, name string) (int, int) {
 			key,
 			value,
 		}
-		if key == "illegal" {
+		if strings.Contains(key.(string), "illegal:") {
 			invalid++
 		}
 		_ = streamWriter.SetRow("A"+strconv.Itoa(record+1), tmp)
@@ -526,32 +528,6 @@ func RecordSample(ex *excelize.File, index int) {
 	res := fmt.Sprintf("total %d records", record)
 	printfItemResult("样本扫描信息", res, 0)
 
-	return
-}
-
-func PrintMd5() {
-	for i := 0; i < global.IndexMax; i++ {
-		switch i {
-		case global.IndexC0:
-			fmt.Printf("DS identify md5 >>>>>>>>>>>>>>>>>>\n")
-		case global.IndexC1:
-			fmt.Printf("DS monitor md5 >>>>>>>>>>>>>>>>>>\n")
-		case global.IndexC2:
-			fmt.Printf("DS rule md5 >>>>>>>>>>>>>>>>>>\n")
-		case global.IndexC3:
-			fmt.Printf("DS evidence md5 >>>>>>>>>>>>>>>>>>\n")
-		case global.IndexC4:
-			fmt.Printf("DS keyword md5 >>>>>>>>>>>>>>>>>>\n")
-		default:
-			return
-		}
-		count := 0
-		Md5Map[i].Range(func(key, value interface{}) bool {
-			count++
-			fmt.Printf("\tC%d\t%05d\t%v\n", i, count, key)
-			return true
-		})
-	}
 	return
 }
 
