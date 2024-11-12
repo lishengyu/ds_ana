@@ -3,6 +3,7 @@ package global
 import (
 	"fmt"
 	"os"
+	"time"
 )
 
 const (
@@ -108,6 +109,10 @@ var (
 	}
 )
 
+var (
+	TimeStr string
+)
+
 func PathExists(path string) bool {
 	_, err := os.Stat(path)
 	if err == nil {
@@ -129,4 +134,8 @@ func PrintReportSuffix(ctx string) {
 	fmt.Printf("----------------\n")
 	fmt.Printf("%s\n", ctx)
 	fmt.Printf("======================================\n")
+}
+
+func init() {
+	TimeStr = time.Now().Format("20060102")
 }

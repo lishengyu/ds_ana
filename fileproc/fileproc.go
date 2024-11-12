@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -157,6 +159,36 @@ func fieldsNull(key string) bool {
 	return true
 }
 
+func fieldsSize(key string) bool {
+	if key == "" {
+		return false
+	}
+
+	if key == "0" {
+		return true
+	}
+
+	//小数点后两位
+	re := regexp.MustCompile(`^\d+(\.\d{2}$)`)
+	return re.MatchString(key)
+}
+
+func fieldsNoZero(key string) bool {
+	if key == "" {
+		return false
+	}
+
+	n, err := strconv.Atoi(key)
+	if err != nil {
+		return false
+	}
+
+	if n == 0 {
+		return false
+	}
+	return true
+}
+
 func fieldsNullZero(key string) bool {
 	if key == "" || key == "0" {
 		return false
@@ -164,10 +196,19 @@ func fieldsNullZero(key string) bool {
 	return true
 }
 
-func fieldsIntZero(num int) bool {
+func fieldsIntNoZero(num int) bool {
 	if num == 0 {
 		return false
 	}
+	return true
+}
+
+func fieldsInt(key string) bool {
+	_, err := strconv.Atoi(key)
+	if err != nil {
+		return false
+	}
+
 	return true
 }
 
@@ -216,9 +257,27 @@ func fieldsMatch(key string) bool {
 	return true
 }
 
-func fieldsHttp(proto, key string) bool {
+func fieldsDomain(proto, key string) bool {
 	if proto == "1" {
 		if key == "" {
+			return false
+		}
+
+		if len(key) > 128 {
+			return false
+		}
+	}
+
+	return true
+}
+
+func fieldsUrl(proto, key string) bool {
+	if proto == "1" {
+		if key == "" {
+			return false
+		}
+
+		if len(key) > 2048 {
 			return false
 		}
 	}
@@ -248,12 +307,47 @@ func feildsLogid(key string) bool {
 		return false
 	}
 
+	if !strings.HasPrefix(key, global.TimeStr) {
+		return false
+	}
+
 	LogidMapStoreInc(&LogidMap, key)
 
 	return true
 }
 
+func fieldsIp(key string) bool {
+	if key == "" {
+		return false
+	}
+
+	if net.ParseIP(key) == nil {
+		return false
+	}
+
+	return true
+}
+
+func fieldsPort(key string) bool {
+	if key == "" {
+		return false
+	}
+
+	p, err := strconv.Atoi(key)
+	if err != nil {
+		return false
+	}
+
+	if p < 1 || p > 65535 {
+		return false
+	}
+	return true
+}
+
 func fieldsMd5(key string, logType int) bool {
+	if key == "" || len(key) != 32 {
+		return false
+	}
 	md5 := strings.ToUpper(key)
 	Md5Map[logType].Store(md5, 1)
 	return true
@@ -344,20 +438,32 @@ func procC0Fields(fs []string) (int, bool) {
 		return global.C0_House_ID, false
 	}
 
+	if valid := fieldsNull(fs[global.C0_RuleID]); !valid {
+		return global.C0_RuleID, false
+	}
+
+	if valid := fieldsNull(fs[global.C0_Rule_Desc]); !valid {
+		return global.C0_Rule_Desc, false
+	}
+
+	if valid := fieldsIp(fs[global.C0_AssetsIP]); !valid {
+		return global.C0_AssetsIP, false
+	}
+
 	if valid := fieldsFileType(fs[global.C0_DataFileType]); !valid {
 		return global.C0_DataFileType, false
 	}
 
-	if valid := fieldsNull(fs[global.C0_AssetsSize]); !valid {
+	if valid := fieldsSize(fs[global.C0_AssetsSize]); !valid {
 		return global.C0_AssetsSize, false
 	}
 
-	if valid := fieldsNull(fs[global.C0_AssetsNum]); !valid {
+	if valid := fieldsInt(fs[global.C0_AssetsNum]); !valid {
 		return global.C0_AssetsNum, false
 	}
 
 	datainfoGroup, _ := strconv.Atoi(fs[global.C0_DataInfoNum])
-	if valid := fieldsIntZero(datainfoGroup); !valid {
+	if valid := fieldsIntNoZero(datainfoGroup); !valid {
 		return global.C0_DataInfoNum, false
 	}
 
@@ -384,19 +490,19 @@ func procC0Fields(fs []string) (int, bool) {
 		return global.C0_CurTime, false
 	}
 
-	if valid := fieldsNull(fs[global.C0_SrcIP+offset]); !valid {
+	if valid := fieldsIp(fs[global.C0_SrcIP+offset]); !valid {
 		return global.C0_SrcIP, false
 	}
 
-	if valid := fieldsNull(fs[global.C0_DestIP+offset]); !valid {
+	if valid := fieldsIp(fs[global.C0_DestIP+offset]); !valid {
 		return global.C0_DestIP, false
 	}
 
-	if valid := fieldsNull(fs[global.C0_SrcPort+offset]); !valid {
+	if valid := fieldsPort(fs[global.C0_SrcPort+offset]); !valid {
 		return global.C0_SrcPort, false
 	}
 
-	if valid := fieldsNull(fs[global.C0_DestPort+offset]); !valid {
+	if valid := fieldsPort(fs[global.C0_DestPort+offset]); !valid {
 		return global.C0_DestPort, false
 	}
 
@@ -432,35 +538,47 @@ func procC1Fields(fs []string) (int, bool) {
 		return global.C1_House_ID, false
 	}
 
+	if valid := fieldsNull(fs[global.C1_RuleID]); !valid {
+		return global.C1_RuleID, false
+	}
+
+	if valid := fieldsNull(fs[global.C1_Rule_Desc]); !valid {
+		return global.C1_Rule_Desc, false
+	}
+
 	if valid := fieldsDataProto(fs[global.C1_Proto]); !valid {
 		return global.C1_Proto, false
 	}
 
-	if valid := fieldsHttp(fs[global.C1_Proto], fs[global.C1_Domain]); !valid {
+	if valid := fieldsDomain(fs[global.C1_Proto], fs[global.C1_Domain]); !valid {
 		return global.C1_Domain, false
 	}
 
-	if valid := fieldsHttp(fs[global.C1_Proto], fs[global.C1_Url]); !valid {
+	if valid := fieldsUrl(fs[global.C1_Proto], fs[global.C1_Url]); !valid {
 		return global.C1_Url, false
+	}
+
+	if valid := fieldsMatch(fs[global.C1_Title]); !valid {
+		return global.C1_Title, false
 	}
 
 	if valid := fieldsEvent(fs[global.C1_EventTypeID], fs[global.C1_EventSubType]); !valid {
 		return global.C1_EventTypeID, false
 	}
 
-	if valid := fieldsNull(fs[global.C1_SrcIP]); !valid {
+	if valid := fieldsIp(fs[global.C1_SrcIP]); !valid {
 		return global.C1_SrcIP, false
 	}
 
-	if valid := fieldsNull(fs[global.C1_DestIP]); !valid {
+	if valid := fieldsIp(fs[global.C1_DestIP]); !valid {
 		return global.C1_DestIP, false
 	}
 
-	if valid := fieldsNull(fs[global.C1_SrcPort]); !valid {
+	if valid := fieldsPort(fs[global.C1_SrcPort]); !valid {
 		return global.C1_SrcPort, false
 	}
 
-	if valid := fieldsNull(fs[global.C1_DestPort]); !valid {
+	if valid := fieldsPort(fs[global.C1_DestPort]); !valid {
 		return global.C1_DestPort, false
 	}
 
@@ -468,11 +586,11 @@ func procC1Fields(fs []string) (int, bool) {
 		return global.C1_FileType, false
 	}
 
-	if valid := fieldsNull(fs[global.C1_FileSize]); !valid {
+	if valid := fieldsSize(fs[global.C1_FileSize]); !valid {
 		return global.C1_FileSize, false
 	}
 
-	if valid := fieldsNull(fs[global.C1_DataNum]); !valid {
+	if valid := fieldsNoZero(fs[global.C1_DataNum]); !valid {
 		return global.C1_DataNum, false
 	}
 
@@ -492,8 +610,71 @@ func procC1Fields(fs []string) (int, bool) {
 }
 
 func procC4Fields(fs []string) (int, bool) {
+	if valid := fieldsNull(fs[global.C4_CommandId]); !valid {
+		return global.C4_CommandId, false
+	}
+	if valid := feildsLogid(fs[global.C4_LogID]); !valid {
+		return global.C4_LogID, false
+	}
+	if valid := fieldsNull(fs[global.C4_HouseID]); !valid {
+		return global.C4_HouseID, false
+	}
+	if valid := fieldsNoZero(fs[global.C4_StrategyId]); !valid {
+		return global.C4_StrategyId, false
+	}
+	if valid := fieldsNull(fs[global.C4_KeyWord]); !valid {
+		return global.C4_KeyWord, false
+	}
+	if valid := fieldsNull(fs[global.C4_Features]); !valid {
+		return global.C4_Features, false
+	}
+	if valid := fieldsNoZero(fs[global.C4_AssetsNum]); !valid {
+		return global.C4_AssetsNum, false
+	}
+	if valid := fieldsIp(fs[global.C4_SrcIP]); !valid {
+		return global.C4_SrcIP, false
+	}
+	if valid := fieldsIp(fs[global.C4_DestIP]); !valid {
+		return global.C4_DestIP, false
+	}
+	if valid := fieldsPort(fs[global.C4_ScrPort]); !valid {
+		return global.C4_ScrPort, false
+	}
+	if valid := fieldsPort(fs[global.C4_DestPort]); !valid {
+		return global.C4_DestPort, false
+	}
+	if valid := fieldsDomain(fs[global.C4_Proto], fs[global.C4_Domain]); !valid {
+		return global.C4_Domain, false
+	}
+	if valid := fieldsUrl(fs[global.C4_Proto], fs[global.C4_Url]); !valid {
+		return global.C4_Url, false
+	}
+	if valid := fieldsMatch(fs[global.C4_DataDirection]); !valid {
+		return global.C4_DataDirection, false
+	}
+
+	if valid := fieldsDataProto(fs[global.C4_Proto]); !valid {
+		return global.C4_Proto, false
+	}
+
+	if valid := fieldsFileType(fs[global.C4_FileType]); !valid {
+		return global.C4_FileType, false
+	}
+
+	if valid := fieldsSize(fs[global.C4_FileSize]); !valid {
+		return global.C4_FileSize, false
+	}
+
+	if valid := fieldsNull(fs[global.C4_AttachMent]); !valid {
+		return global.C4_AttachMent, false
+	}
+
 	if valid := fieldsMd5(fs[global.C4_FileMD5], global.IndexC4); !valid {
 		return global.C4_FileMD5, false
+	}
+
+	if valid := fieldsNull(fs[global.C4_GatherTime]); !valid {
+		return global.C4_GatherTime, false
 	}
 
 	return 0, true
@@ -549,40 +730,39 @@ func recordC1Info(fs []string) {
 	return
 }
 
+func recordLogInvalid(cmap map[string]CheckInfo, line string, info CheckInfo, index int) {
+	cmap[line] = info
+	incLogInvalidCnt(index)
+}
+
 func procC0Ctx(line, filename string) {
 	fs := strings.Split(line, "|")
 	if len(fs) < 24 {
-		//fmt.Printf("invalid log:[%s]\n", line)
 		info := CheckInfo{
 			Reason:   fmt.Sprintf("字段个数%d不符", len(fs)),
 			Filenmae: filename,
 		}
-		C0_CheckMap[line] = info
-		incLogInvalidCnt(global.IndexC0)
+		recordLogInvalid(C0_CheckMap, line, info, global.IndexC0)
 		return
 	}
 	datainfoGroup, _ := strconv.Atoi(fs[global.C0_DataInfoNum])
 	if datainfoGroup > 1 {
 		nums := 24 + (datainfoGroup-1)*3
 		if len(fs) != nums {
-			//fmt.Printf("invalid log:[%s]\n", line)
 			info := CheckInfo{
 				Reason:   fmt.Sprintf("字段个数%d不符", len(fs)),
 				Filenmae: filename,
 			}
-			C0_CheckMap[line] = info
-			incLogInvalidCnt(global.IndexC0)
+			recordLogInvalid(C0_CheckMap, line, info, global.IndexC0)
 			return
 		}
 	} else {
 		if len(fs) != 24 {
-			//fmt.Printf("invalid log:[%s]\n", line)
 			info := CheckInfo{
 				Reason:   fmt.Sprintf("字段个数%d不符", len(fs)),
 				Filenmae: filename,
 			}
-			C0_CheckMap[line] = info
-			incLogInvalidCnt(global.IndexC0)
+			recordLogInvalid(C0_CheckMap, line, info, global.IndexC0)
 			return
 		}
 	}
@@ -591,15 +771,12 @@ func procC0Ctx(line, filename string) {
 		recordC0Info(fs)
 		incLogValidCnt(global.IndexC0)
 	} else {
-		//fmt.Printf("invalid log:[%s]\n", line)
 		info := CheckInfo{
 			Reason:   fmt.Sprintf("第%d个字段非法", index+1),
 			Filenmae: filename,
 		}
-		C0_CheckMap[line] = info
-		incLogInvalidCnt(global.IndexC0)
+		recordLogInvalid(C0_CheckMap, line, info, global.IndexC0)
 	}
-
 	return
 }
 
@@ -611,8 +788,7 @@ func procC1Ctx(line, filename string) {
 			Reason:   fmt.Sprintf("字段个数%d不符", len(fs)),
 			Filenmae: filename,
 		}
-		C1_CheckMap[line] = info
-		incLogInvalidCnt(global.IndexC1)
+		recordLogInvalid(C1_CheckMap, line, info, global.IndexC1)
 		return
 	}
 
@@ -625,8 +801,7 @@ func procC1Ctx(line, filename string) {
 			Reason:   fmt.Sprintf("第%d个字段非法", index+1),
 			Filenmae: filename,
 		}
-		C1_CheckMap[line] = info
-		incLogInvalidCnt(global.IndexC1)
+		recordLogInvalid(C1_CheckMap, line, info, global.IndexC1)
 	}
 	return
 }
@@ -642,26 +817,23 @@ func procC3Ctx(ctx, filename string) {
 func procC4Ctx(line, filename string) {
 	fs := strings.Split(line, "|")
 	if len(fs) != 20 {
-		//fmt.Printf("invalid log:[%s]\n", line)
 		info := CheckInfo{
 			Reason:   fmt.Sprintf("字段个数%d不符", len(fs)),
 			Filenmae: filename,
 		}
-		C4_CheckMap[line] = info
-		incLogInvalidCnt(global.IndexC4)
+		recordLogInvalid(C4_CheckMap, line, info, global.IndexC4)
+
 		return
 	}
 
 	if index, valid := procC4Fields(fs); valid {
 		incLogValidCnt(global.IndexC4)
 	} else {
-		//fmt.Printf("invalid log:[%s]\n", line)
 		info := CheckInfo{
 			Reason:   fmt.Sprintf("第%d个字段非法", index+1),
 			Filenmae: filename,
 		}
-		C4_CheckMap[line] = info
-		incLogInvalidCnt(global.IndexC4)
+		recordLogInvalid(C4_CheckMap, line, info, global.IndexC4)
 	}
 	return
 }
