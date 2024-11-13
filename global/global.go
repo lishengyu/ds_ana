@@ -12,6 +12,7 @@ const (
 	EvidenceName = "ds_evidence_file"
 	KeywordName  = "ds_keyword_file"
 	KeywordNameB = "ds_data_keyword"
+	AuditNam     = "ds_audit_log"
 )
 
 const (
@@ -20,6 +21,7 @@ const (
 	IndexC2
 	IndexC3
 	IndexC4
+	IndexA8
 	IndexMax
 )
 

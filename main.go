@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"os"
-	"path/filepath"
 
 	"ds_ana/fileproc"
 	"ds_ana/global"
@@ -26,14 +25,7 @@ func main() {
 	}
 
 	if gPath != "" {
-		pathc0 := filepath.Join(gPath, global.IdentifyName)
-		pathc1 := filepath.Join(gPath, global.MonitorName)
-		pathc3 := filepath.Join(gPath, global.EvidenceName)
-		pathc4 := filepath.Join(gPath, global.KeywordName)
-		if exist := global.PathExists(pathc4); !exist {
-			pathc4 = filepath.Join(gPath, global.KeywordNameB)
-		}
-		fileproc.AnalyzeLogFile(pathc0, pathc1, pathc3, pathc4, oPath)
+		fileproc.AnalyzeLogFile(gPath, date, oPath)
 	} else {
 		flag.Usage()
 		os.Exit(-1)

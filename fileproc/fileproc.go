@@ -41,18 +41,19 @@ type StDictStat struct {
 }
 
 type SampleC0Info struct {
-	Data        string
-	MatchNum    string
+	Data        []dict.DataCode
+	MatchNum    int
 	Application int
 	Business    int
-	CrossBoard  string
+	CrossBoard  int
 }
 
 type SampleC1Info struct {
-	Event    string
+	Event    dict.RiskCode
 	L7Proto  int
 	FileType int
 	FileSize string
+	DataNum  int
 }
 
 type SampleC4Info struct {
@@ -73,6 +74,7 @@ type CheckInfo struct {
 var (
 	Md5Map        [global.IndexMax]sync.Map   //MD5表，比对话单和取证文件是否对应
 	LogidMap      sync.Map                    //logid是否重复判断
+	AuditLogidMap sync.Map                    //审计日志的logid是否重复
 	AppProtoStat  sync.Map                    //统计应用层协议情况
 	BusProtoStat  sync.Map                    //统计业务层协议情况
 	FileTypeStat  sync.Map                    //文件类型，文件后缀类型
@@ -82,6 +84,7 @@ var (
 	C0_CheckMap map[string]CheckInfo //识别话单必填项校验
 	C1_CheckMap map[string]CheckInfo //监测话单必填项校验
 	C4_CheckMap map[string]CheckInfo //关键字话单必填项校验
+	A8_CheckMap map[string]CheckInfo //审计日志话单校验
 	SampleMap   sync.Map
 )
 
@@ -749,31 +752,49 @@ func procC4Fields(fs []string) (int, bool) {
 	return 0, true
 }
 
+// 审计日志只检查logid是否重复
+func procA8Fields(fs []string) (int, bool) {
+	key := fs[0]
+	if key == "" || len(key) != 32 {
+		return 0, false
+	}
+
+	if !strings.HasPrefix(key, global.TimeStr) {
+		return 0, false
+	}
+
+	LogidMapStoreInc(&AuditLogidMap, key)
+	return 0, true
+}
+
 func recordC0Info(fs []string) {
 	datainfoGroup, _ := strconv.Atoi(fs[global.C0_DataInfoNum])
-	var data string
+	var codes []dict.DataCode
 	for i := 0; i < datainfoGroup; i++ {
-		if i == 0 {
-			data = fs[global.C0_DataType+i*3]
-		} else {
-			data = data + "|" + fs[global.C0_DataType+i*3]
+		var code dict.DataCode
+		code.Class, _ = strconv.Atoi(fs[global.C0_DataType+i*3])
+		code.Level, _ = strconv.Atoi(fs[global.C0_DataType+i*3+1])
+		fields := strings.Split(fs[global.C0_DataType+i*3+2], ",")
+		if len(fields) != 2 {
+			fmt.Printf("deal c0 log failed: %s\n", fs[global.C0_DataType+i*3+2])
+			continue
 		}
-		data += fs[global.C0_DataType+i*3]
-		data += "," + fs[global.C0_DataType+i*3+1]
-		data += "," + fs[global.C0_DataType+i*3+2]
+		code.Rule, _ = strconv.Atoi(fields[0])
+		code.Hit, _ = strconv.Atoi(fields[1])
+		codes = append(codes, code)
 	}
 	offset := 0
 	if datainfoGroup > 0 {
 		offset = (datainfoGroup - 1) * 3
 	}
 
-	matchNum := fs[global.C0_AssetsNum]
+	matchNum, _ := strconv.Atoi(fs[global.C0_AssetsNum])
 	application, _ := strconv.Atoi(fs[global.C0_ApplicationProtocol+offset])
 	business, _ := strconv.Atoi(fs[global.C0_BusinessProtocol+offset])
-	cross := fs[global.C0_IsMatchEvent+offset]
+	cross, _ := strconv.Atoi(fs[global.C0_IsMatchEvent+offset])
 
 	info := SampleC0Info{
-		Data:        data,
+		Data:        codes,
 		MatchNum:    matchNum,
 		Application: application,
 		Business:    business,
@@ -787,12 +808,18 @@ func recordC0Info(fs []string) {
 func recordC1Info(fs []string) {
 	l7Proto, _ := strconv.Atoi(fs[global.C1_Proto])
 	fileType, _ := strconv.Atoi(fs[global.C1_FileType])
+	num, _ := strconv.Atoi(fs[global.C1_DataNum])
+
+	var event dict.RiskCode
+	event.RiskType, _ = strconv.Atoi(fs[global.C1_EventTypeID])
+	event.RiskSubType, _ = strconv.Atoi(fs[global.C1_EventSubType])
 
 	info := SampleC1Info{
-		Event:    fs[global.C1_EventTypeID] + "," + fs[global.C1_EventSubType],
+		Event:    event,
 		L7Proto:  l7Proto,
 		FileType: fileType,
 		FileSize: fs[global.C1_FileSize],
+		DataNum:  num,
 	}
 
 	SampleMapUpdateC1(&SampleMap, fs[global.C1_FileMD5], info)
@@ -907,6 +934,29 @@ func procC4Ctx(line, filename string) {
 	return
 }
 
+func procA8Ctx(line, filename string) {
+	fs := strings.Split(line, "|")
+	if len(fs) != 9 && len(fs) != 10 {
+		info := CheckInfo{
+			Reason:   fmt.Sprintf("字段个数%d不符", len(fs)),
+			Filenmae: filename,
+		}
+		recordLogInvalid(A8_CheckMap, line, info, global.IndexA8)
+		return
+	}
+
+	if index, valid := procA8Fields(fs); valid {
+		incLogValidCnt(global.IndexA8)
+	} else {
+		info := CheckInfo{
+			Reason:   fmt.Sprintf("第%d个字段非法", index+1),
+			Filenmae: filename,
+		}
+		recordLogInvalid(C4_CheckMap, line, info, global.IndexA8)
+	}
+	return
+}
+
 func procLogData(ctx string, logType int, filename string) error {
 	switch logType {
 	case global.IndexC0:
@@ -919,6 +969,8 @@ func procLogData(ctx string, logType int, filename string) error {
 		procC3Ctx(ctx, filename)
 	case global.IndexC4:
 		procC4Ctx(ctx, filename)
+	case global.IndexA8:
+		procA8Ctx(ctx, filename)
 	default:
 		fmt.Printf("Not support log type: %d\n", logType)
 	}
@@ -1038,26 +1090,44 @@ func ProcEvidencePath(dir string, wg *sync.WaitGroup) error {
 	return err
 }
 
-func AnalyzeLogFile(c0, c1, c3, c4, dst string) {
-	cur := time.Now()
+func getPathByParam(lpath, logpath, date string) string {
+	if date == "" {
+		return filepath.Join(lpath, logpath)
+	}
+	return filepath.Join(lpath, logpath, date, "success")
+}
 
+func AnalyzeLogFile(gptah, date, opath string) {
+	cur := time.Now()
 	var wg sync.WaitGroup
 
 	//获取取证文件MD5值
 	wg.Add(1)
+	c3 := getPathByParam(gptah, global.EvidenceName, date)
 	go ProcEvidencePath(c3, &wg)
 
 	//处理识别话单
 	wg.Add(1)
+	c0 := getPathByParam(gptah, global.IdentifyName, date)
 	go ProcLogPath(c0, &wg, global.IndexC0)
 
 	//处理监测话单
 	wg.Add(1)
+	c1 := getPathByParam(gptah, global.MonitorName, date)
 	go ProcLogPath(c1, &wg, global.IndexC1)
 
 	//处理关键字话单
 	wg.Add(1)
+	c4 := getPathByParam(gptah, global.KeywordName, date)
+	if exist := global.PathExists(c4); !exist {
+		c4 = getPathByParam(gptah, global.KeywordNameB, date)
+	}
 	go ProcLogPath(c4, &wg, global.IndexC4)
+
+	//处理审计日志
+	wg.Add(1)
+	a8 := getPathByParam(gptah, global.AuditNam, date)
+	go ProcLogPath(a8, &wg, global.IndexA8)
 
 	wg.Wait()
 
@@ -1073,8 +1143,8 @@ func AnalyzeLogFile(c0, c1, c3, c4, dst string) {
 	GenerateResult(excel)
 	global.PrintReportSuffix("Report End")
 	//保存文件名
-	os.Rename(dst, dst+"_bak")
-	if err := excel.SaveAs(dst); err != nil {
+	os.Rename(opath, opath+"_bak")
+	if err := excel.SaveAs(opath); err != nil {
 		fmt.Printf("close xlsx file failed: %v\n", err)
 		return
 	}
@@ -1087,4 +1157,5 @@ func init() {
 	C0_CheckMap = make(map[string]CheckInfo)
 	C1_CheckMap = make(map[string]CheckInfo)
 	C4_CheckMap = make(map[string]CheckInfo)
+	A8_CheckMap = make(map[string]CheckInfo)
 }

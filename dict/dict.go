@@ -148,6 +148,7 @@ type DataCode struct {
 	Class int
 	Level int
 	Rule  int
+	Hit   int
 }
 
 var C11_12_13_DICT = map[DataCode]string{
