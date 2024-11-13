@@ -220,6 +220,50 @@ func fieldsUpload(key string) bool {
 	return true
 }
 
+func fieldsDataInfoDict(fs []string) bool {
+	if len(fs) != 3 {
+		return false
+	}
+
+	id, err := strconv.Atoi(fs[0])
+	if err != nil {
+		return false
+	}
+
+	subid, err := strconv.Atoi(fs[1])
+	if err != nil {
+		return false
+	}
+
+	list := strings.Split(fs[2], ",")
+	if len(list) != 2 {
+		return false
+	}
+
+	codeid, err := strconv.Atoi(list[0])
+	if err != nil {
+		return false
+	}
+
+	hit, err := strconv.Atoi(list[0])
+	if err != nil || hit == 0 {
+		return false
+	}
+
+	datacode := dict.DataCode{
+		Class: id,
+		Level: subid,
+		Rule:  codeid,
+	}
+
+	_, ok := dict.C11_12_13_DICT[datacode]
+	if !ok {
+		return false
+	}
+
+	return true
+}
+
 func fieldsDataInfo(key string, index int) bool {
 	flag := false
 	switch index {
@@ -290,7 +334,24 @@ func fieldsEvent(id, subid string) bool {
 		return false
 	}
 
-	//校验正确性，存map表
+	a, err := strconv.Atoi(id)
+	if err != nil {
+		return false
+	}
+	b, err := strconv.Atoi(subid)
+	if err != nil {
+		return false
+	}
+
+	risk := dict.RiskCode{
+		RiskType:    a,
+		RiskSubType: b,
+	}
+
+	_, ok := dict.C7_C8_DICT[risk]
+	if !ok {
+		return false
+	}
 
 	return true
 }
@@ -438,10 +499,10 @@ func procC0Fields(fs []string) (int, bool) {
 		return global.C0_House_ID, false
 	}
 
+	//后面可以尝试和分级分类一起进行校验
 	if valid := fieldsNull(fs[global.C0_RuleID]); !valid {
 		return global.C0_RuleID, false
 	}
-
 	if valid := fieldsNull(fs[global.C0_Rule_Desc]); !valid {
 		return global.C0_Rule_Desc, false
 	}
@@ -472,11 +533,19 @@ func procC0Fields(fs []string) (int, bool) {
 		offset = (datainfoGroup - 1) * 3
 	}
 
-	for i := 0; i < offset+3; i++ {
-		if valid := fieldsDataInfo(fs[global.C0_DataType+i], i%3); !valid {
-			return global.C0_DataType + i%3, false
+	for i := 0; i < datainfoGroup; i++ {
+		if valid := fieldsDataInfoDict(fs[global.C0_DataType+3*i : global.C0_DataType+3*i+3]); !valid {
+			return global.C0_DataType + 3*i, false
 		}
 	}
+
+	/*
+		for i := 0; i < offset+3; i++ {
+			if valid := fieldsDataInfo(fs[global.C0_DataType+i], i%3); !valid {
+				return global.C0_DataType + i%3, false
+			}
+		}
+	*/
 
 	if valid := fieldsUpload(fs[global.C0_IsUploadFile+offset]); !valid {
 		return global.C0_IsUploadFile, false
