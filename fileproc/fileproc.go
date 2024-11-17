@@ -162,6 +162,22 @@ func fieldsNull(key string) bool {
 	return true
 }
 
+func fieldsFeatureid(key string) bool {
+	if key == "" {
+		return true
+	}
+
+	fs := strings.Split(key, ",")
+	for _, v := range fs {
+		_, err := strconv.Atoi(v)
+		if err != nil {
+			return false
+		}
+	}
+
+	return true
+}
+
 func fieldsSize(key string) bool {
 	if key == "" {
 		return false
@@ -697,7 +713,7 @@ func procC4Fields(fs []string) (int, bool) {
 	if valid := fieldsNull(fs[global.C4_KeyWord]); !valid {
 		return global.C4_KeyWord, false
 	}
-	if valid := fieldsNull(fs[global.C4_Features]); !valid {
+	if valid := fieldsFeatureid(fs[global.C4_Features]); !valid {
 		return global.C4_Features, false
 	}
 	if valid := fieldsNoZero(fs[global.C4_AssetsNum]); !valid {
@@ -952,7 +968,7 @@ func procA8Ctx(line, filename string) {
 			Reason:   fmt.Sprintf("第%d个字段非法", index+1),
 			Filenmae: filename,
 		}
-		recordLogInvalid(C4_CheckMap, line, info, global.IndexA8)
+		recordLogInvalid(A8_CheckMap, line, info, global.IndexA8)
 	}
 	return
 }

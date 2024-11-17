@@ -322,16 +322,16 @@ func CheckDict(ex *excelize.File, index int) {
 	return
 }
 
-func CheckC0LogMap(ex *excelize.File, index int) {
-	fmt.Printf("Check Item %03d [C0话单必填项校验]\n", index)
+func CheckLogMap(ex *excelize.File, index int, name string, lmap map[string]CheckInfo) {
+	fmt.Printf("Check Item %03d [%s必填项校验]\n", index, name)
 
-	_, err := ex.NewSheet("识别话单")
+	_, err := ex.NewSheet(name)
 	if err != nil {
 		fmt.Printf("new sheet failed:%v\n", err)
 		return
 	}
 
-	streamWriter, err := ex.NewStreamWriter("识别话单")
+	streamWriter, err := ex.NewStreamWriter(name)
 	if err != nil {
 		fmt.Printf("new stream writer failed: %v\n", err)
 		return
@@ -348,7 +348,7 @@ func CheckC0LogMap(ex *excelize.File, index int) {
 	}
 
 	total := 0
-	for key, value := range C0_CheckMap {
+	for key, value := range lmap {
 		tmp := []interface{}{
 			key,
 			value.Reason,
@@ -364,54 +364,7 @@ func CheckC0LogMap(ex *excelize.File, index int) {
 	} else {
 		res = fmt.Sprintf("invalid %d records", total)
 	}
-	printfItemResult("C0话单合法性校验", res, total)
-
-	return
-}
-
-func CheckC1LogMap(ex *excelize.File, index int) {
-	fmt.Printf("Check Item %03d [C1话单必填项校验]\n", index)
-
-	_, err := ex.NewSheet("监测话单")
-	if err != nil {
-		fmt.Printf("new sheet failed:%v\n", err)
-		return
-	}
-
-	streamWriter, err := ex.NewStreamWriter("监测话单")
-	if err != nil {
-		fmt.Printf("new stream writer failed: %v\n", err)
-		return
-	}
-	defer func() {
-		if err = streamWriter.Flush(); err != nil {
-			fmt.Printf("结束流式写入失败: %v\n", err)
-		}
-	}()
-
-	if err := streamWriter.SetRow("A1", []interface{}{"原始日志", "错误原因", "文件名"}); err != nil {
-		fmt.Printf("stream writer write failed: %v\n", err)
-		return
-	}
-
-	total := 0
-	for key, value := range C1_CheckMap {
-		tmp := []interface{}{
-			key,
-			value.Reason,
-			value.Filenmae,
-		}
-		total++
-		_ = streamWriter.SetRow("A"+strconv.Itoa(total+1), tmp)
-	}
-
-	var res string
-	if total == 0 {
-		res = fmt.Sprintf("Pass")
-	} else {
-		res = fmt.Sprintf("invalid %d records", total)
-	}
-	printfItemResult("C1话单合法性校验", res, total)
+	printfItemResult(fmt.Sprintf("%s合法性校验", name), res, total)
 
 	return
 }
@@ -663,9 +616,13 @@ func GenerateResult(excel *excelize.File) {
 	checkNum++
 	CheckDict(excel, checkNum)
 	checkNum++
-	CheckC0LogMap(excel, checkNum)
+	CheckLogMap(excel, checkNum, "C0识别话单", C0_CheckMap)
 	checkNum++
-	CheckC1LogMap(excel, checkNum)
+	CheckLogMap(excel, checkNum, "C1监测话单", C1_CheckMap)
+	checkNum++
+	CheckLogMap(excel, checkNum, "C4关键字话单", C4_CheckMap)
+	checkNum++
+	CheckLogMap(excel, checkNum, "A8审计话单", A8_CheckMap)
 	checkNum++
 	RecordSample(excel, checkNum)
 	checkNum++
