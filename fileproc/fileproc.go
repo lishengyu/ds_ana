@@ -46,6 +46,7 @@ type SampleC0Info struct {
 	Application int
 	Business    int
 	CrossBoard  int
+	FileType    int
 }
 
 type SampleC1Info struct {
@@ -71,10 +72,14 @@ type CheckInfo struct {
 	Filenmae string
 }
 
+type LogIdInfo struct {
+	Cnt    int
+	IdFlag int
+}
+
 var (
 	Md5Map        [global.IndexMax]sync.Map   //MD5表，比对话单和取证文件是否对应
 	LogidMap      sync.Map                    //logid是否重复判断
-	AuditLogidMap sync.Map                    //审计日志的logid是否重复
 	AppProtoStat  sync.Map                    //统计应用层协议情况
 	BusProtoStat  sync.Map                    //统计业务层协议情况
 	FileTypeStat  sync.Map                    //文件类型，文件后缀类型
@@ -108,11 +113,19 @@ func incLogInvalidCnt(index int) {
 	atomic.AddInt64(&FileStat[index].LogNum.InvalidCnt, 1)
 }
 
-func LogidMapStoreInc(m *sync.Map, id string) {
-	value, ok := m.LoadOrStore(id, 1)
+func LogidMapStoreInc(m *sync.Map, id string, index int) {
+	//LogIdInfo
+	value, ok := m.Load(id)
 	if ok {
-		cnt := value.(int) + 1
-		m.Store(id, cnt)
+		v := value.(*LogIdInfo)
+		v.Cnt++
+		v.IdFlag |= 1 << index
+	} else {
+		l := &LogIdInfo{
+			Cnt:    1,
+			IdFlag: 1 << index,
+		}
+		m.Store(id, l)
 	}
 }
 
@@ -239,34 +252,30 @@ func fieldsUpload(key string) bool {
 	return true
 }
 
-func fieldsDataInfoDict(fs []string) bool {
-	if len(fs) != 3 {
-		return false
-	}
-
+func fieldsDataInfoDict(fs []string) (bool, int) {
 	id, err := strconv.Atoi(fs[0])
 	if err != nil {
-		return false
+		return false, 0
 	}
 
 	subid, err := strconv.Atoi(fs[1])
 	if err != nil {
-		return false
+		return false, 1
 	}
 
 	list := strings.Split(fs[2], ",")
 	if len(list) != 2 {
-		return false
+		return false, 2
 	}
 
 	codeid, err := strconv.Atoi(list[0])
 	if err != nil {
-		return false
+		return false, 2
 	}
 
 	hit, err := strconv.Atoi(list[0])
 	if err != nil || hit == 0 {
-		return false
+		return false, 2
 	}
 
 	datacode := dict.DataCode{
@@ -277,10 +286,10 @@ func fieldsDataInfoDict(fs []string) bool {
 
 	_, ok := dict.C11_12_13_DICT[datacode]
 	if !ok {
-		return false
+		return false, 0
 	}
 
-	return true
+	return true, 0
 }
 
 func fieldsDataInfo(key string, index int) bool {
@@ -382,7 +391,7 @@ func fieldsDataType(id string) bool {
 	return true
 }
 
-func feildsLogid(key string) bool {
+func feildsLogid(key string, index int) bool {
 	if key == "" || len(key) != 32 {
 		return false
 	}
@@ -391,7 +400,7 @@ func feildsLogid(key string) bool {
 		return false
 	}
 
-	LogidMapStoreInc(&LogidMap, key)
+	LogidMapStoreInc(&LogidMap, key, index)
 
 	return true
 }
@@ -433,7 +442,7 @@ func fieldsMd5(key string, logType int) bool {
 	return true
 }
 
-func fieldsFileType(key string) bool {
+func fieldsFileType(key string, index int) bool {
 	id, err := strconv.Atoi(key)
 	if err != nil {
 		fmt.Printf("transfer string to int failed: %v\n", err)
@@ -443,15 +452,15 @@ func fieldsFileType(key string) bool {
 	value, ok := dict.C10_DICT[id]
 	if !ok {
 		//fmt.Printf("app proto value is not in rfc: [%d]\n", id)
-		LogidMapStoreInc(&FileTypeStat, "illegal:"+key)
+		LogidMapStoreInc(&FileTypeStat, "illegal:"+key, index)
 		return false
 	}
 
-	LogidMapStoreInc(&FileTypeStat, value)
+	LogidMapStoreInc(&FileTypeStat, value, index)
 	return true
 }
 
-func fieldsAppProto(key string) bool {
+func fieldsAppProto(key string, index int) bool {
 	id, err := strconv.Atoi(key)
 	if err != nil {
 		fmt.Printf("transfer string to int failed: %v\n", err)
@@ -461,15 +470,15 @@ func fieldsAppProto(key string) bool {
 	value, ok := dict.C3_DICT[id]
 	if !ok {
 		//fmt.Printf("app proto value is not in rfc: [%d]\n", id)
-		LogidMapStoreInc(&AppProtoStat, "illegal:"+key)
+		LogidMapStoreInc(&AppProtoStat, "illegal:"+key, index)
 		return false
 	}
 
-	LogidMapStoreInc(&AppProtoStat, value)
+	LogidMapStoreInc(&AppProtoStat, value, index)
 	return true
 }
 
-func fieldsBusProto(key string) bool {
+func fieldsBusProto(key string, index int) bool {
 	id, err := strconv.Atoi(key)
 	if err != nil {
 		fmt.Printf("transfer string to int failed: %v\n", err)
@@ -479,15 +488,15 @@ func fieldsBusProto(key string) bool {
 	value, ok := dict.C4_DICT[id]
 	if !ok {
 		//fmt.Printf("business proto value is not in rfc: [%d]\n", id)
-		LogidMapStoreInc(&BusProtoStat, "illegal:"+key)
+		LogidMapStoreInc(&BusProtoStat, "illegal:"+key, index)
 		return false
 	}
 
-	LogidMapStoreInc(&BusProtoStat, value)
+	LogidMapStoreInc(&BusProtoStat, value, index)
 	return true
 }
 
-func fieldsDataProto(key string) bool {
+func fieldsDataProto(key string, index int) bool {
 	id, err := strconv.Atoi(key)
 	if err != nil {
 		fmt.Printf("transfer string to int failed: %v\n", err)
@@ -497,16 +506,16 @@ func fieldsDataProto(key string) bool {
 	value, ok := dict.C9_DICT[id]
 	if !ok {
 		//fmt.Printf("business proto value is not in rfc: [%d]\n", id)
-		LogidMapStoreInc(&DataProtoStat, "illegal:"+key)
+		LogidMapStoreInc(&DataProtoStat, "illegal:"+key, index)
 		return false
 	}
 
-	LogidMapStoreInc(&DataProtoStat, value)
+	LogidMapStoreInc(&DataProtoStat, value, index)
 	return true
 }
 
 func procC0Fields(fs []string) (int, bool) {
-	if valid := feildsLogid(fs[global.C0_LogID]); !valid {
+	if valid := feildsLogid(fs[global.C0_LogID], global.IndexC0); !valid {
 		return global.C0_LogID, false
 	}
 
@@ -530,7 +539,7 @@ func procC0Fields(fs []string) (int, bool) {
 		return global.C0_AssetsIP, false
 	}
 
-	if valid := fieldsFileType(fs[global.C0_DataFileType]); !valid {
+	if valid := fieldsFileType(fs[global.C0_DataFileType], global.IndexC0); !valid {
 		return global.C0_DataFileType, false
 	}
 
@@ -553,8 +562,8 @@ func procC0Fields(fs []string) (int, bool) {
 	}
 
 	for i := 0; i < datainfoGroup; i++ {
-		if valid := fieldsDataInfoDict(fs[global.C0_DataType+3*i : global.C0_DataType+3*i+3]); !valid {
-			return global.C0_DataType + 3*i, false
+		if valid, ret := fieldsDataInfoDict(fs[global.C0_DataType+3*i : global.C0_DataType+3*i+3]); !valid {
+			return global.C0_DataType + 3*i + ret, false
 		}
 	}
 
@@ -598,11 +607,11 @@ func procC0Fields(fs []string) (int, bool) {
 		return global.C0_ProtocolType, false
 	}
 
-	if valid := fieldsAppProto(fs[global.C0_ApplicationProtocol+offset]); !valid {
+	if valid := fieldsAppProto(fs[global.C0_ApplicationProtocol+offset], global.IndexC0); !valid {
 		return global.C0_ApplicationProtocol, false
 	}
 
-	if valid := fieldsBusProto(fs[global.C0_BusinessProtocol+offset]); !valid {
+	if valid := fieldsBusProto(fs[global.C0_BusinessProtocol+offset], global.IndexC0); !valid {
 		return global.C0_BusinessProtocol, false
 	}
 
@@ -614,7 +623,7 @@ func procC0Fields(fs []string) (int, bool) {
 }
 
 func procC1Fields(fs []string) (int, bool) {
-	if valid := feildsLogid(fs[global.C1_LogID]); !valid {
+	if valid := feildsLogid(fs[global.C1_LogID], global.IndexC1); !valid {
 		return global.C1_LogID, false
 	}
 
@@ -634,7 +643,7 @@ func procC1Fields(fs []string) (int, bool) {
 		return global.C1_Rule_Desc, false
 	}
 
-	if valid := fieldsDataProto(fs[global.C1_Proto]); !valid {
+	if valid := fieldsDataProto(fs[global.C1_Proto], global.IndexC1); !valid {
 		return global.C1_Proto, false
 	}
 
@@ -670,7 +679,7 @@ func procC1Fields(fs []string) (int, bool) {
 		return global.C1_DestPort, false
 	}
 
-	if valid := fieldsFileType(fs[global.C1_FileType]); !valid {
+	if valid := fieldsFileType(fs[global.C1_FileType], global.IndexC1); !valid {
 		return global.C1_FileType, false
 	}
 
@@ -701,7 +710,7 @@ func procC4Fields(fs []string) (int, bool) {
 	if valid := fieldsNull(fs[global.C4_CommandId]); !valid {
 		return global.C4_CommandId, false
 	}
-	if valid := feildsLogid(fs[global.C4_LogID]); !valid {
+	if valid := feildsLogid(fs[global.C4_LogID], global.IndexC4); !valid {
 		return global.C4_LogID, false
 	}
 	if valid := fieldsNull(fs[global.C4_HouseID]); !valid {
@@ -741,11 +750,11 @@ func procC4Fields(fs []string) (int, bool) {
 		return global.C4_DataDirection, false
 	}
 
-	if valid := fieldsDataProto(fs[global.C4_Proto]); !valid {
+	if valid := fieldsDataProto(fs[global.C4_Proto], global.IndexC4); !valid {
 		return global.C4_Proto, false
 	}
 
-	if valid := fieldsFileType(fs[global.C4_FileType]); !valid {
+	if valid := fieldsFileType(fs[global.C4_FileType], global.IndexC4); !valid {
 		return global.C4_FileType, false
 	}
 
@@ -769,7 +778,7 @@ func procC4Fields(fs []string) (int, bool) {
 }
 
 // 审计日志只检查logid是否重复
-func procA8Fields(fs []string) (int, bool) {
+func procA8Fields(fs []string, index int) (int, bool) {
 	key := fs[0]
 	if key == "" || len(key) != 32 {
 		return 0, false
@@ -779,7 +788,7 @@ func procA8Fields(fs []string) (int, bool) {
 		return 0, false
 	}
 
-	LogidMapStoreInc(&AuditLogidMap, key)
+	LogidMapStoreInc(&LogidMap, key, index)
 	return 0, true
 }
 
@@ -808,6 +817,7 @@ func recordC0Info(fs []string) {
 	application, _ := strconv.Atoi(fs[global.C0_ApplicationProtocol+offset])
 	business, _ := strconv.Atoi(fs[global.C0_BusinessProtocol+offset])
 	cross, _ := strconv.Atoi(fs[global.C0_IsMatchEvent+offset])
+	filetype, _ := strconv.Atoi(fs[global.C0_DataFileType])
 
 	info := SampleC0Info{
 		Data:        codes,
@@ -815,6 +825,7 @@ func recordC0Info(fs []string) {
 		Application: application,
 		Business:    business,
 		CrossBoard:  cross,
+		FileType:    filetype,
 	}
 
 	SampleMapUpdateC0(&SampleMap, fs[global.C0_FileMD5+offset], info)
@@ -961,7 +972,7 @@ func procA8Ctx(line, filename string) {
 		return
 	}
 
-	if index, valid := procA8Fields(fs); valid {
+	if index, valid := procA8Fields(fs, global.IndexA8); valid {
 		incLogValidCnt(global.IndexA8)
 	} else {
 		info := CheckInfo{
@@ -1052,11 +1063,19 @@ func ProcLogPath(path string, wg *sync.WaitGroup, logType int) error {
 		fmt.Printf("Path %s not exist, skip it!\n", path)
 		return nil
 	}
+
+	deep1 := strings.Count(path, string(os.PathSeparator))
 	//fmt.Printf("DS Identify path: [%s]\n", path)
 	err := filepath.WalkDir(path, func(dir string, d fs.DirEntry, err error) error {
 		if err != nil {
 			fmt.Printf("filepath walk failed:%v\n", err)
 			return err
+		}
+
+		deep2 := strings.Count(dir, string(os.PathSeparator))
+		if deep2 > deep1+1 {
+			//跳过子目录下的文件
+			return nil
 		}
 
 		if !d.IsDir() {
@@ -1079,10 +1098,17 @@ func ProcLogPath(path string, wg *sync.WaitGroup, logType int) error {
 func ProcEvidencePath(dir string, wg *sync.WaitGroup) error {
 	defer wg.Done()
 
+	deep1 := strings.Count(dir, string(os.PathSeparator))
 	err := filepath.WalkDir(dir, func(dir string, d fs.DirEntry, err error) error {
 		if err != nil {
 			fmt.Printf("filepath walk failed:%v\n", err)
 			return err
+		}
+
+		deep2 := strings.Count(dir, string(os.PathSeparator))
+		if deep2 > deep1+1 {
+			//跳过子目录下的文件
+			return nil
 		}
 
 		if !d.IsDir() {

@@ -208,7 +208,7 @@ func CheckLogCnt(ex *excelize.File, index int) {
 	return
 }
 
-func CheckLogId(ex *excelize.File, index int, name string, m *sync.Map) {
+func CheckLogId(ex *excelize.File, index int, name string, m *sync.Map, logtype int) {
 	fmt.Printf("Check Item %03d [%s唯一性校验]\n", index, name)
 
 	_, err := ex.NewSheet(name)
@@ -236,15 +236,20 @@ func CheckLogId(ex *excelize.File, index int, name string, m *sync.Map) {
 	record := 0
 	invalid := 0
 	m.Range(func(key, value interface{}) bool {
-		record++
-		if value != 1 {
-			tmp := []interface{}{
-				key,
-				value,
+		v := value.(*LogIdInfo)
+		exist := v.IdFlag & (1 << logtype)
+		if exist != 0 {
+			record++
+			if v.Cnt != 1 {
+				tmp := []interface{}{
+					key,
+					v.Cnt,
+				}
+				invalid++
+				_ = streamWriter.SetRow("A"+strconv.Itoa(invalid+1), tmp)
 			}
-			invalid++
-			_ = streamWriter.SetRow("A"+strconv.Itoa(invalid+1), tmp)
 		}
+
 		return true
 	})
 
@@ -286,9 +291,10 @@ func checkDict(ex *excelize.File, m *sync.Map, name string) (int, int) {
 	invalid := 0
 	m.Range(func(key, value interface{}) bool {
 		record++
+		v := value.(*LogIdInfo)
 		tmp := []interface{}{
 			key,
-			value,
+			v.Cnt,
 		}
 		if strings.Contains(key.(string), "illegal:") {
 			invalid++
@@ -487,16 +493,16 @@ func RecordSample(ex *excelize.File, index int) {
 	return
 }
 
-func CheckRelation(ex *excelize.File, index int) {
-	fmt.Printf("Check Item %03d [校验识别和监测话单关联字段]\n", index)
+func CheckRelation(ex *excelize.File, index int, name string) {
+	fmt.Printf("Check Item %03d %s\n", index, name)
 
-	_, err := ex.NewSheet("C0_C1")
+	_, err := ex.NewSheet(name)
 	if err != nil {
 		fmt.Printf("new sheet failed:%v\n", err)
 		return
 	}
 
-	streamWriter, err := ex.NewStreamWriter("C0_C1")
+	streamWriter, err := ex.NewStreamWriter(name)
 	if err != nil {
 		fmt.Printf("new stream writer failed: %v\n", err)
 		return
@@ -526,15 +532,50 @@ func CheckRelation(ex *excelize.File, index int) {
 		nummap = map[int]int{}
 		for _, v := range info.C0Info {
 			nummap[v.MatchNum]++
-		}
-		for _, v := range info.C1Info {
-			nummap[v.DataNum]++
+			sum := 0
+			for _, m := range v.Data {
+				sum += m.Hit
+			}
+			nummap[sum]++
 		}
 
 		if len(nummap) != 1 {
 			tmp := []interface{}{
 				md5,
-				"识别、监测话单中敏感信息数量不一致",
+				"识别话单中敏感信息数量不一致",
+			}
+			invalid++
+			row++
+			_ = streamWriter.SetRow("A"+strconv.Itoa(row+1), tmp)
+		} else {
+			for _, v := range info.C1Info {
+				nummap[v.DataNum]++
+			}
+
+			if len(nummap) != 1 {
+				tmp := []interface{}{
+					md5,
+					"识别、监测话单中敏感信息数量不一致",
+				}
+				invalid++
+				row++
+				_ = streamWriter.SetRow("A"+strconv.Itoa(row+1), tmp)
+			}
+		}
+
+		//文件类型
+		nummap = map[int]int{}
+		for _, v := range info.C0Info {
+			nummap[v.FileType]++
+		}
+		for _, v := range info.C1Info {
+			nummap[v.FileType]++
+		}
+
+		if len(nummap) != 1 {
+			tmp := []interface{}{
+				md5,
+				"识别、监测话单中文件类型不一致",
 			}
 			invalid++
 			row++
@@ -610,9 +651,13 @@ func GenerateResult(excel *excelize.File) {
 	checkNum++
 	CheckLogCnt(excel, checkNum)
 	checkNum++
-	CheckLogId(excel, checkNum, "Logid", &LogidMap)
+	CheckLogId(excel, checkNum, "Logid校验C0", &LogidMap, global.IndexC0)
 	checkNum++
-	CheckLogId(excel, checkNum, "审计Logid", &AuditLogidMap)
+	CheckLogId(excel, checkNum, "Logid校验C1", &LogidMap, global.IndexC1)
+	checkNum++
+	CheckLogId(excel, checkNum, "Logid校验C4", &LogidMap, global.IndexC4)
+	checkNum++
+	CheckLogId(excel, checkNum, "Logid校验A8", &LogidMap, global.IndexA8)
 	checkNum++
 	CheckDict(excel, checkNum)
 	checkNum++
@@ -626,7 +671,7 @@ func GenerateResult(excel *excelize.File) {
 	checkNum++
 	RecordSample(excel, checkNum)
 	checkNum++
-	CheckRelation(excel, checkNum)
+	CheckRelation(excel, checkNum, "识别监测话单关联")
 
 	return
 }
