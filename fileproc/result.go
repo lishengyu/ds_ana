@@ -240,7 +240,12 @@ func CheckLogId(ex *excelize.File, index int, name string, m *sync.Map, logtype 
 		exist := v.IdFlag & (1 << logtype)
 		if exist != 0 {
 			record++
-			if v.Cnt != 1 {
+			sum := 0
+			for _, cnt := range v.Cnt {
+				sum += cnt
+			}
+
+			if sum > 1 {
 				tmp := []interface{}{
 					key,
 					v.Cnt,
@@ -264,7 +269,8 @@ func CheckLogId(ex *excelize.File, index int, name string, m *sync.Map, logtype 
 	return
 }
 
-func checkDict(ex *excelize.File, m *sync.Map, name string) (int, int) {
+func checkDict(ex *excelize.File, m *sync.Map, index int) (int, int) {
+	name := dict.DictIndex_Name[index]
 	_, err := ex.NewSheet(name)
 	if err != nil {
 		fmt.Printf("new sheet failed:%v\n", err)
@@ -292,9 +298,10 @@ func checkDict(ex *excelize.File, m *sync.Map, name string) (int, int) {
 	m.Range(func(key, value interface{}) bool {
 		record++
 		v := value.(*LogIdInfo)
+		//取用识别话单中的文件类型数量为标准进行统计
 		tmp := []interface{}{
 			key,
-			v.Cnt,
+			v.Cnt[global.IndexC0],
 		}
 		if strings.Contains(key.(string), "illegal:") {
 			invalid++
@@ -309,19 +316,19 @@ func checkDict(ex *excelize.File, m *sync.Map, name string) (int, int) {
 func CheckDict(ex *excelize.File, index int) {
 	fmt.Printf("Check Item %03d [附录表校验]\n", index)
 
-	total, invalid := checkDict(ex, &AppProtoStat, "C3表")
+	total, invalid := checkDict(ex, &AppProtoStat, dict.IndexDictC3)
 	res := fmt.Sprintf(" total %d records; invalid %d records", total, invalid)
 	printfItemResult("应用层协议类型代码表C3", res, invalid)
 
-	total, invalid = checkDict(ex, &BusProtoStat, "C4表")
+	total, invalid = checkDict(ex, &BusProtoStat, dict.IndexDictC4)
 	res = fmt.Sprintf(" total %d records; invalid %d records", total, invalid)
 	printfItemResult("业务层协议类型代码表C4", res, invalid)
 
-	total, invalid = checkDict(ex, &DataProtoStat, "C9表")
+	total, invalid = checkDict(ex, &DataProtoStat, dict.IndexDictC9)
 	res = fmt.Sprintf(" total %d records; invalid %d records", total, invalid)
 	printfItemResult("数据识别协议列表C9", res, invalid)
 
-	total, invalid = checkDict(ex, &FileTypeStat, "C10表")
+	total, invalid = checkDict(ex, &FileTypeStat, dict.IndexDictC10)
 	res = fmt.Sprintf(" total %d records; invalid %d records", total, invalid)
 	printfItemResult("数据识别文件格式类别C10", res, invalid)
 

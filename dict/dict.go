@@ -1,5 +1,27 @@
 package dict
 
+const (
+	IndexDictC3 = iota
+	IndexDictC4
+	IndexDictC9
+	IndexDictC10
+)
+
+var (
+	DictIndex_Name = map[int]string{
+		IndexDictC3:  "C3表",
+		IndexDictC4:  "C4表",
+		IndexDictC9:  "C9表",
+		IndexDictC10: "C10表",
+	}
+	DictName_Index = map[string]int{
+		"C3表":  IndexDictC3,
+		"C4表":  IndexDictC4,
+		"C9表":  IndexDictC9,
+		"C10表": IndexDictC10,
+	}
+)
+
 var C3_DICT = map[int]string{
 	1:    "FTP",
 	2:    "SSH",

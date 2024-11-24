@@ -73,7 +73,7 @@ type CheckInfo struct {
 }
 
 type LogIdInfo struct {
-	Cnt    int
+	Cnt    [global.IndexMax]int
 	IdFlag int
 }
 
@@ -118,13 +118,13 @@ func LogidMapStoreInc(m *sync.Map, id string, index int) {
 	value, ok := m.Load(id)
 	if ok {
 		v := value.(*LogIdInfo)
-		v.Cnt++
+		v.Cnt[index]++
 		v.IdFlag |= 1 << index
 	} else {
 		l := &LogIdInfo{
-			Cnt:    1,
 			IdFlag: 1 << index,
 		}
+		l.Cnt[index] = 1
 		m.Store(id, l)
 	}
 }
