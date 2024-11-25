@@ -19,6 +19,14 @@ func printfItemResult(item, res string, succ int) {
 	}
 }
 
+func printfItemResultCnt(item string, all, fail int) {
+	if fail == 0 {
+		fmt.Printf("\t[PASS] %s:\ttotal:%d\n", item, all)
+	} else {
+		fmt.Printf("\t[FAIL] %s:\ttotal:%d\tfail:%d\n", item, all, fail)
+	}
+}
+
 func CheckMd5(ex *excelize.File, index int) {
 	fmt.Printf("Check Item %03d [校验话单和取证文件]\n", index)
 
@@ -56,7 +64,7 @@ func CheckMd5(ex *excelize.File, index int) {
 		if !ok {
 			tmp := []interface{}{
 				key,
-				"识别话单C0 缺失取证文件",
+				"06c0 缺失取证文件",
 			}
 			invalid++
 			row++
@@ -71,7 +79,7 @@ func CheckMd5(ex *excelize.File, index int) {
 	} else {
 		res = fmt.Sprintf("total %d recrods; invalid %d records", record, invalid)
 	}
-	printfItemResult("识别话单C0", res, invalid)
+	printfItemResult("06c0", res, invalid)
 
 	record = 0
 	invalid = 0
@@ -81,7 +89,7 @@ func CheckMd5(ex *excelize.File, index int) {
 		if !ok {
 			tmp := []interface{}{
 				key,
-				"监测话单C1 缺失取证文件",
+				"06c1 缺失取证文件",
 			}
 			invalid++
 			row++
@@ -95,7 +103,7 @@ func CheckMd5(ex *excelize.File, index int) {
 	} else {
 		res = fmt.Sprintf("total %d recrods; invalid %d records", record, invalid)
 	}
-	printfItemResult("识别话单C1", res, invalid)
+	printfItemResult("06c1", res, invalid)
 
 	record = 0
 	invalid = 0
@@ -105,7 +113,7 @@ func CheckMd5(ex *excelize.File, index int) {
 		if !ok {
 			tmp := []interface{}{
 				key,
-				"关键词话单C4 缺失取证文件",
+				"06c4 缺失取证文件",
 			}
 			invalid++
 			row++
@@ -119,7 +127,7 @@ func CheckMd5(ex *excelize.File, index int) {
 	} else {
 		res = fmt.Sprintf("total %d recrods; invalid %d records", record, invalid)
 	}
-	printfItemResult("关键词话单C4", res, invalid)
+	printfItemResult("06c4", res, invalid)
 
 	//C3
 	record = 0
@@ -136,11 +144,11 @@ func CheckMd5(ex *excelize.File, index int) {
 
 		var str string
 		if !ok1 && !ok2 {
-			str = "取证文件C3 缺失C0/C1话单文件"
+			str = "06c3 缺失06c0/06c1话单文件"
 		} else if !ok1 {
-			str = "取证文件C3 缺失C0话单文件"
+			str = "06c3 缺失06c0话单文件"
 		} else if !ok2 {
-			str = "取证文件C3 缺失C1话单文件"
+			str = "06c3 缺失06c1话单文件"
 		}
 		tmp := []interface{}{
 			key,
@@ -157,7 +165,7 @@ func CheckMd5(ex *excelize.File, index int) {
 	} else {
 		res = fmt.Sprintf("total %d recrods; invalid %d records", record, invalid)
 	}
-	printfItemResult("取证文件C3", res, invalid)
+	printfItemResult("06c3", res, invalid)
 
 	return
 }
@@ -183,7 +191,7 @@ func CheckLogCnt(ex *excelize.File, index int) {
 		}
 	}()
 
-	if err := streamWriter.SetRow("A1", []interface{}{"日志类型", "文件数量", "日志数量", "有效日志", "空行", "错误日志"}); err != nil {
+	if err := streamWriter.SetRow("A1", []interface{}{"日志类型", "文件数量", "文件名错误", "日志数量", "错误日志"}); err != nil {
 		fmt.Printf("stream writer write failed: %v\n", err)
 		return
 	}
@@ -193,9 +201,8 @@ func CheckLogCnt(ex *excelize.File, index int) {
 		tmp := []interface{}{
 			global.LogName[i],
 			cnt.FileNum,
+			cnt.FileErrNum,
 			cnt.LogNum.AllCnt,
-			cnt.LogNum.ValidCnt,
-			cnt.LogNum.NullCnt,
 			cnt.LogNum.InvalidCnt,
 		}
 		if err := streamWriter.SetRow("A"+strconv.Itoa(row), tmp); err != nil {
@@ -208,19 +215,17 @@ func CheckLogCnt(ex *excelize.File, index int) {
 	return
 }
 
-func CheckLogId(ex *excelize.File, index int, name string, m *sync.Map, logtype int) {
-	fmt.Printf("Check Item %03d [%s唯一性校验]\n", index, name)
-
+func CheckLogId(ex *excelize.File, index int, name string, m *sync.Map, logtype int) (int, int) {
 	_, err := ex.NewSheet(name)
 	if err != nil {
 		fmt.Printf("new sheet failed:%v\n", err)
-		return
+		return 0, 0
 	}
 
 	streamWriter, err := ex.NewStreamWriter(name)
 	if err != nil {
 		fmt.Printf("new stream writer failed: %v\n", err)
-		return
+		return 0, 0
 	}
 	defer func() {
 		if err = streamWriter.Flush(); err != nil {
@@ -230,7 +235,7 @@ func CheckLogId(ex *excelize.File, index int, name string, m *sync.Map, logtype 
 
 	if err := streamWriter.SetRow("A1", []interface{}{name, "出现次数"}); err != nil {
 		fmt.Printf("stream writer write failed: %v\n", err)
-		return
+		return 0, 0
 	}
 
 	record := 0
@@ -258,13 +263,23 @@ func CheckLogId(ex *excelize.File, index int, name string, m *sync.Map, logtype 
 		return true
 	})
 
-	var res string
-	if invalid == 0 {
-		res = fmt.Sprintf("total %d records", record)
-	} else {
-		res = fmt.Sprintf("total %d records; invalid %d records", record, invalid)
-	}
-	printfItemResult(fmt.Sprintf("%s唯一性校验", name), res, invalid)
+	return record, invalid
+}
+
+func CheckGLogId(ex *excelize.File, index int) {
+	fmt.Printf("Check Item %03d [Logid校验]\n", index)
+
+	record, invalid := CheckLogId(ex, index, "Logid校验C0", &LogidMap, global.IndexC0)
+	printfItemResultCnt(fmt.Sprintf("%s校验", global.LogName[global.IndexC0]), record, invalid)
+
+	record, invalid = CheckLogId(ex, index, "Logid校验C1", &LogidMap, global.IndexC1)
+	printfItemResultCnt(fmt.Sprintf("%s校验", global.LogName[global.IndexC1]), record, invalid)
+
+	record, invalid = CheckLogId(ex, index, "Logid校验C4", &LogidMap, global.IndexC4)
+	printfItemResultCnt(fmt.Sprintf("%s校验", global.LogName[global.IndexC4]), record, invalid)
+
+	record, invalid = CheckLogId(ex, index, "Logid校验A8", &LogidMap, global.IndexA8)
+	printfItemResultCnt(fmt.Sprintf("%s校验", global.LogName[global.IndexA8]), record, invalid)
 
 	return
 }
@@ -317,20 +332,16 @@ func CheckDict(ex *excelize.File, index int) {
 	fmt.Printf("Check Item %03d [附录表校验]\n", index)
 
 	total, invalid := checkDict(ex, &AppProtoStat, dict.IndexDictC3)
-	res := fmt.Sprintf(" total %d records; invalid %d records", total, invalid)
-	printfItemResult("应用层协议类型代码表C3", res, invalid)
+	printfItemResultCnt("应用层协议类型代码表C3", total, invalid)
 
 	total, invalid = checkDict(ex, &BusProtoStat, dict.IndexDictC4)
-	res = fmt.Sprintf(" total %d records; invalid %d records", total, invalid)
-	printfItemResult("业务层协议类型代码表C4", res, invalid)
+	printfItemResultCnt("业务层协议类型代码表C4", total, invalid)
 
 	total, invalid = checkDict(ex, &DataProtoStat, dict.IndexDictC9)
-	res = fmt.Sprintf(" total %d records; invalid %d records", total, invalid)
-	printfItemResult("数据识别协议列表C9", res, invalid)
+	printfItemResultCnt("数据识别协议列表C9", total, invalid)
 
 	total, invalid = checkDict(ex, &FileTypeStat, dict.IndexDictC10)
-	res = fmt.Sprintf(" total %d records; invalid %d records", total, invalid)
-	printfItemResult("数据识别文件格式类别C10", res, invalid)
+	printfItemResultCnt("数据识别文件格式类别C10", total, invalid)
 
 	return
 }
@@ -500,6 +511,142 @@ func RecordSample(ex *excelize.File, index int) {
 	return
 }
 
+func _checkAssetNum(info *SampleMapValue, streamWriter *excelize.StreamWriter, md5 string, invalid *int, row *int) {
+	a := map[int]int{}
+	for _, v := range info.C0Info {
+		a[v.MatchNum]++
+		sum := 0
+		for _, m := range v.Data {
+			sum += m.Hit
+		}
+		a[sum]++
+	}
+
+	if len(a) != 1 {
+		tmp := []interface{}{
+			md5,
+			"06c0话单中敏感信息数量不一致",
+		}
+		*invalid++
+		*row++
+		_ = streamWriter.SetRow("A"+strconv.Itoa(*row+1), tmp)
+	} else {
+		for _, v := range info.C1Info {
+			a[v.DataNum]++
+		}
+
+		if len(a) != 1 {
+			tmp := []interface{}{
+				md5,
+				"06c0/06c1话单中敏感信息数量不一致",
+			}
+			*invalid++
+			*row++
+			_ = streamWriter.SetRow("A"+strconv.Itoa(*row+1), tmp)
+		}
+	}
+}
+
+func _checkFileType(info *SampleMapValue, streamWriter *excelize.StreamWriter, md5 string, invalid *int, row *int) {
+	//文件大小
+	a := make(map[int]int)
+	for _, v := range info.C0Info {
+		a[v.FileType]++
+	}
+	for _, v := range info.C1Info {
+		a[v.FileType]++
+	}
+	for _, v := range info.C4Info {
+		a[v.FileType]++
+	}
+
+	if len(a) != 1 {
+		tmp := []interface{}{
+			md5,
+			"06c0/06c1/06c4话单中文件类型不一致",
+		}
+		*invalid++
+		*row++
+		_ = streamWriter.SetRow("A"+strconv.Itoa(*row+1), tmp)
+	}
+}
+
+func _checkFileSize(info *SampleMapValue, streamWriter *excelize.StreamWriter, md5 string, invalid *int, row *int) {
+	//文件大小
+	a := make(map[string]int)
+	for _, v := range info.C0Info {
+		a[v.FileSize]++
+	}
+	for _, v := range info.C1Info {
+		a[v.FileSize]++
+	}
+	for _, v := range info.C4Info {
+		a[v.FileSize]++
+	}
+
+	if len(a) != 1 {
+		rea := fmt.Sprintf("06c0/06c1/06c4话单中文件大小不一致: %v", a)
+		tmp := []interface{}{
+			md5,
+			rea,
+		}
+		*invalid++
+		*row++
+		_ = streamWriter.SetRow("A"+strconv.Itoa(*row+1), tmp)
+	}
+}
+
+func _checkRisk(info *SampleMapValue, streamWriter *excelize.StreamWriter, md5 string, invalid *int, row *int) {
+	cross := 0
+	eflag := false
+	for i, v := range info.C0Info {
+		if i == 0 {
+			cross = v.CrossBoard
+		} else {
+			if cross != v.CrossBoard {
+				eflag = true
+				break
+			}
+		}
+	}
+	if eflag {
+		tmp := []interface{}{
+			md5,
+			"识别话单中的跨境字段有误",
+		}
+		*invalid++
+		*row++
+		_ = streamWriter.SetRow("A"+strconv.Itoa(*row+1), tmp)
+	}
+
+	eflag = false
+	if cross == 0 {
+		//跨境
+		for _, v := range info.C1Info {
+			if v.Event.RiskType != 400 {
+				eflag = true
+				break
+			}
+		}
+	} else {
+		for _, v := range info.C1Info {
+			if v.Event.RiskType < 200 || (v.Event.RiskType > 203 && v.Event.RiskType != 999) {
+				eflag = true
+				break
+			}
+		}
+	}
+	if eflag {
+		tmp := []interface{}{
+			md5,
+			"识别话单跨境字段和风险类型不符",
+		}
+		*invalid++
+		*row++
+		_ = streamWriter.SetRow("A"+strconv.Itoa(*row+1), tmp)
+	}
+}
+
 func CheckRelation(ex *excelize.File, index int, name string) {
 	fmt.Printf("Check Item %03d %s\n", index, name)
 
@@ -531,112 +678,15 @@ func CheckRelation(ex *excelize.File, index int, name string) {
 	record := 0
 	invalid := 0
 	row := 0
-	nummap := make(map[int]int)
 	SampleMap.Range(func(key, value interface{}) bool {
 		record++
 		md5 := key.(string)
 		info := value.(*SampleMapValue)
-		nummap = map[int]int{}
-		for _, v := range info.C0Info {
-			nummap[v.MatchNum]++
-			sum := 0
-			for _, m := range v.Data {
-				sum += m.Hit
-			}
-			nummap[sum]++
-		}
 
-		if len(nummap) != 1 {
-			tmp := []interface{}{
-				md5,
-				"识别话单中敏感信息数量不一致",
-			}
-			invalid++
-			row++
-			_ = streamWriter.SetRow("A"+strconv.Itoa(row+1), tmp)
-		} else {
-			for _, v := range info.C1Info {
-				nummap[v.DataNum]++
-			}
-
-			if len(nummap) != 1 {
-				tmp := []interface{}{
-					md5,
-					"识别、监测话单中敏感信息数量不一致",
-				}
-				invalid++
-				row++
-				_ = streamWriter.SetRow("A"+strconv.Itoa(row+1), tmp)
-			}
-		}
-
-		//文件类型
-		nummap = map[int]int{}
-		for _, v := range info.C0Info {
-			nummap[v.FileType]++
-		}
-		for _, v := range info.C1Info {
-			nummap[v.FileType]++
-		}
-
-		if len(nummap) != 1 {
-			tmp := []interface{}{
-				md5,
-				"识别、监测话单中文件类型不一致",
-			}
-			invalid++
-			row++
-			_ = streamWriter.SetRow("A"+strconv.Itoa(row+1), tmp)
-		}
-
-		cross := 0
-		eflag := false
-		for i, v := range info.C0Info {
-			if i == 0 {
-				cross = v.CrossBoard
-			} else {
-				if cross != v.CrossBoard {
-					eflag = true
-					break
-				}
-			}
-		}
-		if eflag {
-			tmp := []interface{}{
-				md5,
-				"识别话单中的跨境字段有误",
-			}
-			invalid++
-			row++
-			_ = streamWriter.SetRow("A"+strconv.Itoa(row+1), tmp)
-		}
-
-		eflag = false
-		if cross == 0 {
-			//跨境
-			for _, v := range info.C1Info {
-				if v.Event.RiskType != 400 {
-					eflag = true
-					break
-				}
-			}
-		} else {
-			for _, v := range info.C1Info {
-				if v.Event.RiskType < 200 || (v.Event.RiskType > 203 && v.Event.RiskType != 999) {
-					eflag = true
-					break
-				}
-			}
-		}
-		if eflag {
-			tmp := []interface{}{
-				md5,
-				"识别话单跨境字段和风险类型不符",
-			}
-			invalid++
-			row++
-			_ = streamWriter.SetRow("A"+strconv.Itoa(row+1), tmp)
-		}
+		_checkAssetNum(info, streamWriter, md5, &invalid, &row)
+		_checkFileType(info, streamWriter, md5, &invalid, &row)
+		_checkFileSize(info, streamWriter, md5, &invalid, &row)
+		_checkRisk(info, streamWriter, md5, &invalid, &row)
 
 		return true
 	})
@@ -658,27 +708,21 @@ func GenerateResult(excel *excelize.File) {
 	checkNum++
 	CheckLogCnt(excel, checkNum)
 	checkNum++
-	CheckLogId(excel, checkNum, "Logid校验C0", &LogidMap, global.IndexC0)
-	checkNum++
-	CheckLogId(excel, checkNum, "Logid校验C1", &LogidMap, global.IndexC1)
-	checkNum++
-	CheckLogId(excel, checkNum, "Logid校验C4", &LogidMap, global.IndexC4)
-	checkNum++
-	CheckLogId(excel, checkNum, "Logid校验A8", &LogidMap, global.IndexA8)
+	CheckGLogId(excel, checkNum)
 	checkNum++
 	CheckDict(excel, checkNum)
 	checkNum++
-	CheckLogMap(excel, checkNum, "C0识别话单", C0_CheckMap)
+	CheckLogMap(excel, checkNum, "C0识别话单", LogCheckMap[global.IndexC0])
 	checkNum++
-	CheckLogMap(excel, checkNum, "C1监测话单", C1_CheckMap)
+	CheckLogMap(excel, checkNum, "C1监测话单", LogCheckMap[global.IndexC1])
 	checkNum++
-	CheckLogMap(excel, checkNum, "C4关键字话单", C4_CheckMap)
+	CheckLogMap(excel, checkNum, "C4关键字话单", LogCheckMap[global.IndexC4])
 	checkNum++
-	CheckLogMap(excel, checkNum, "A8审计话单", A8_CheckMap)
+	CheckLogMap(excel, checkNum, "A8审计话单", LogCheckMap[global.IndexA8])
 	checkNum++
 	RecordSample(excel, checkNum)
 	checkNum++
-	CheckRelation(excel, checkNum, "识别监测话单关联")
+	CheckRelation(excel, checkNum, "话单关联")
 
 	return
 }

@@ -2,10 +2,12 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
 
 	"ds_ana/fileproc"
 	"ds_ana/global"
+	"ds_ana/telnetcmd"
 )
 
 var (
@@ -23,6 +25,29 @@ func main() {
 	if date != "" {
 		global.TimeStr = date
 	}
+
+	cli, err := telnetcmd.NewTelCli("127.0.0.1:36500")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	err = cli.ChangeView("sw fa")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	cli.Exec("show dev info")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	err = global.GetManuInfo("/home/filescan/config.yaml", "Manufactor")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Printf("\tManufactor:[%s]\n", global.Manufactor)
 
 	if gPath != "" {
 		fileproc.AnalyzeLogFile(gPath, date, oPath)

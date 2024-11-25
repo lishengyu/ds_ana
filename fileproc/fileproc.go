@@ -19,6 +19,7 @@ import (
 
 	"ds_ana/dict"
 	"ds_ana/global"
+	"ds_ana/telnetcmd"
 
 	"github.com/xuri/excelize/v2"
 )
@@ -31,8 +32,9 @@ type StLogStat struct {
 }
 
 type StFileStat struct {
-	FileNum int64
-	LogNum  StLogStat
+	FileNum    int64
+	FileErrNum int64
+	LogNum     StLogStat
 }
 
 type StDictStat struct {
@@ -47,6 +49,7 @@ type SampleC0Info struct {
 	Business    int
 	CrossBoard  int
 	FileType    int
+	FileSize    string
 }
 
 type SampleC1Info struct {
@@ -58,7 +61,9 @@ type SampleC1Info struct {
 }
 
 type SampleC4Info struct {
-	Keyword string
+	Keyword  string
+	FileType int
+	FileSize string
 }
 
 type SampleMapValue struct {
@@ -86,15 +91,16 @@ var (
 	DataProtoStat sync.Map                    //数据识别协议类型
 	FileStat      [global.IndexMax]StFileStat //统计各类话单上报情况
 
-	C0_CheckMap map[string]CheckInfo //识别话单必填项校验
-	C1_CheckMap map[string]CheckInfo //监测话单必填项校验
-	C4_CheckMap map[string]CheckInfo //关键字话单必填项校验
-	A8_CheckMap map[string]CheckInfo //审计日志话单校验
+	LogCheckMap [global.IndexMax]map[string]CheckInfo //话单校验map表
 	SampleMap   sync.Map
 )
 
 func incFileCnt(index int) {
 	atomic.AddInt64(&FileStat[index].FileNum, 1)
+}
+
+func incFileErrCnt(index int) {
+	atomic.AddInt64(&FileStat[index].FileErrNum, 1)
 }
 
 func incLogAllCnt(index int) {
@@ -168,115 +174,224 @@ func SampleMapUpdateC4(m *sync.Map, md5 string, info SampleC4Info) {
 	return
 }
 
-func fieldsNull(key string) bool {
+func fieldsNull(key string) (string, bool) {
+	msg := ""
 	if key == "" {
-		return false
+		msg = "字段为空"
+		return msg, false
 	}
-	return true
+	return msg, true
 }
 
-func fieldsFeatureid(key string) bool {
+func fieldsCmdId(key string) (string, bool) {
+	msg := ""
+	if key == "" || len(key) > 13 {
+		msg = "字段为空|字段长度大于13"
+		return msg, false
+	}
+	return msg, true
+}
+
+func fieldsHouseId(key string) (string, bool) {
+	msg := ""
+	if key == "" || key != telnetcmd.Devinfo.Dev_HouseId {
+		msg = "字段为空|机房ID校验失败"
+		return msg, false
+	}
+	return msg, true
+}
+
+func fieldsKeyword(key string, hit *int) (string, bool) {
+	msg := ""
+	if key == "" || len(key) > 1024 {
+		msg = "字段为空|字段长度大于1024"
+		return msg, false
+	}
+
+	fs := strings.Split(key, ",")
+	if len(fs) > 50 {
+		msg = "关键词数量大于50"
+		return msg, false
+	}
+
+	*hit = len(fs)
+
+	return msg, true
+}
+
+func fieldsFeatureid(key string) (string, bool) {
+	msg := ""
 	if key == "" {
-		return true
+		return msg, true
+	}
+
+	if len(key) > 1024 {
+		msg = "字段长度大于1024"
+		return msg, false
 	}
 
 	fs := strings.Split(key, ",")
 	for _, v := range fs {
 		_, err := strconv.Atoi(v)
 		if err != nil {
-			return false
+			msg = "字段存在非数值型字符"
+			return msg, false
 		}
 	}
 
-	return true
+	return msg, true
 }
 
-func fieldsSize(key string) bool {
+func fieldsC4AssetsNum(key string, hit int) (string, bool) {
+	msg := ""
+	id, err := strconv.Atoi(key)
+	if err != nil {
+		msg = "字段非数值型字符"
+		return msg, false
+	}
+
+	if id < hit {
+		msg = "命中关键词的次数比关键词数量还少"
+		return msg, false
+	}
+
+	return msg, true
+}
+
+func fieldsSize(key string) (string, bool) {
+	msg := ""
 	if key == "" {
-		return false
+		msg = "字段为空"
+		return msg, false
 	}
 
 	if key == "0" {
-		return true
+		return msg, true
 	}
 
 	//小数点后两位
 	re := regexp.MustCompile(`^\d+(\.\d{2}$)`)
-	return re.MatchString(key)
+
+	match := re.MatchString(key)
+	if !match {
+		msg = "字段不符合小数点后2位数值要求"
+		return msg, false
+	}
+
+	return msg, true
 }
 
-func fieldsNoZero(key string) bool {
+func fieldsAttach(key string) (string, bool) {
+	msg := ""
+	if key == "" || len(key) > 128 {
+		msg = "字段为空|字段长度大于128"
+		return msg, false
+	}
+
+	return msg, true
+}
+
+func fieldsNoZero(key string) (string, bool) {
+	msg := ""
 	if key == "" {
-		return false
+		msg = "字段为空"
+		return msg, false
 	}
 
 	n, err := strconv.Atoi(key)
-	if err != nil {
-		return false
+	if err != nil || n == 0 {
+		msg = "字段非数值型字符|字段等于0"
+		return msg, false
 	}
-
-	if n == 0 {
-		return false
-	}
-	return true
+	return msg, true
 }
 
-func fieldsNullZero(key string) bool {
+func fieldsNullZero(key string) (string, bool) {
+	msg := ""
 	if key == "" || key == "0" {
-		return false
+		msg = "字段值为空|为0"
+		return msg, false
 	}
-	return true
+	return msg, true
 }
 
-func fieldsIntNoZero(num int) bool {
+func fieldsIntNoZero(num int) (string, bool) {
+	msg := ""
 	if num == 0 {
-		return false
+		msg = "字段值不能为0"
+		return msg, false
 	}
-	return true
+	return msg, true
 }
 
-func fieldsInt(key string) bool {
+func fieldsInt(key string) (string, bool) {
+	msg := ""
 	_, err := strconv.Atoi(key)
 	if err != nil {
-		return false
+		msg = "字段非数值型字符"
+		return msg, false
 	}
 
-	return true
+	return msg, true
 }
 
-func fieldsUpload(key string) bool {
-	if key != "0" {
-		return false
+func fieldsAssetNum(key string, sum int) (string, bool) {
+	msg := ""
+	if key == "" {
+		msg = "字段为空"
+		return msg, false
 	}
-
-	return true
-}
-
-func fieldsDataInfoDict(fs []string) (bool, int) {
-	id, err := strconv.Atoi(fs[0])
+	num, err := strconv.Atoi(key)
 	if err != nil {
-		return false, 0
+		msg := "字段为非数值型字符"
+		return msg, false
+	}
+
+	if num != sum || num == 0 {
+		msg := "字段内敏感数量为0|不一致"
+		return msg, false
+	}
+
+	return msg, true
+}
+
+func fieldsUpload(key string) (string, bool) {
+	msg := ""
+	if key != "0" {
+		msg = "字段值必须是0"
+		return msg, false
+	}
+
+	return msg, true
+}
+
+func fieldsDataInfoDict(fs []string, sum *int) (bool, int, string) {
+	id, err := strconv.Atoi(fs[0])
+	if err != nil || (id != 1 && id != 2) {
+		return false, 0, "DataType非数值,或者值非1|2"
 	}
 
 	subid, err := strconv.Atoi(fs[1])
-	if err != nil {
-		return false, 1
+	if err != nil || subid < 1 || subid > 6 {
+		return false, 1, "DataLevel非数值，或者值不在[1-6]范围内"
 	}
 
 	list := strings.Split(fs[2], ",")
 	if len(list) != 2 {
-		return false, 2
+		return false, 2, "DataContent字段格式有误"
 	}
 
 	codeid, err := strconv.Atoi(list[0])
 	if err != nil {
-		return false, 2
+		return false, 2, "DataContent不在代码表中"
 	}
 
-	hit, err := strconv.Atoi(list[0])
+	hit, err := strconv.Atoi(list[1])
 	if err != nil || hit == 0 {
-		return false, 2
+		return false, 2, "DataContent字段hit非数值，或者hit次数为0"
 	}
+
+	*sum += hit
 
 	datacode := dict.DataCode{
 		Class: id,
@@ -286,10 +401,10 @@ func fieldsDataInfoDict(fs []string) (bool, int) {
 
 	_, ok := dict.C11_12_13_DICT[datacode]
 	if !ok {
-		return false, 0
+		return false, 0, "DataType/DataLevel/DataContent字段不在规范表中"
 	}
 
-	return true, 0
+	return true, 0, ""
 }
 
 func fieldsDataInfo(key string, index int) bool {
@@ -314,61 +429,81 @@ func fieldsDataInfo(key string, index int) bool {
 	return flag
 }
 
-func fieldsL4Proto(key string) bool {
+func fieldsL4Proto(key string) (string, bool) {
+	msg := ""
 	if key != "1" && key != "2" {
-		return false
+		msg = "字段范围不对[1-2]"
+		return msg, false
 	}
-	return true
+	return msg, true
 }
 
-func fieldsMatch(key string) bool {
+func fieldsMatch(key string) (string, bool) {
+	msg := ""
 	if key != "0" && key != "1" {
-		return false
+		msg = "字段范围不对[0-1]"
+		return msg, false
 	}
 
-	return true
+	return msg, true
 }
 
-func fieldsDomain(proto, key string) bool {
+func fieldsDomain(proto, key string) (string, bool) {
+	msg := ""
 	if proto == "1" {
 		if key == "" {
-			return false
+			msg = "字段为空"
+			return msg, false
 		}
 
 		if len(key) > 128 {
-			return false
+			msg = "字段长度大于128"
+			return msg, false
 		}
+	} else if key != "" {
+		msg = "非http协议的doamin非空"
+		return msg, false
 	}
 
-	return true
+	return msg, true
 }
 
-func fieldsUrl(proto, key string) bool {
+func fieldsUrl(proto, key string) (string, bool) {
+	msg := ""
 	if proto == "1" {
 		if key == "" {
-			return false
+			msg = "字段为空"
+			return msg, false
 		}
 
 		if len(key) > 2048 {
-			return false
+			msg = "字段长度大于2048"
+			return msg, false
 		}
+	} else if key != "" {
+		msg = "非http协议的url非空"
+		return msg, false
 	}
 
-	return true
+	return msg, true
 }
 
-func fieldsEvent(id, subid string) bool {
+func fieldsEvent(id, subid string) (string, bool) {
+	msg := ""
 	if id == "" || subid == "" {
-		return false
+		msg = "EventTypeID|EventSubType字段为空"
+		return msg, false
 	}
 
 	a, err := strconv.Atoi(id)
 	if err != nil {
-		return false
+		msg = "EventTypeID字段非数值型字符"
+		return msg, false
 	}
 	b, err := strconv.Atoi(subid)
 	if err != nil {
-		return false
+		msg = "EventSubType字段为空字段非数值型字符"
+		return msg, false
 	}
 
 	risk := dict.RiskCode{
@@ -378,182 +513,232 @@ func fieldsEvent(id, subid string) bool {
 
 	_, ok := dict.C7_C8_DICT[risk]
 	if !ok {
-		return false
+		msg = "EventTypeID/EventSubType字段不在规范表中"
+		return msg, false
 	}
 
-	return true
+	return msg, true
 }
 
-func fieldsDataType(id string) bool {
+func fieldsDataType(id string) (string, bool) {
+	msg := ""
 	if id != "1" && id != "2" {
-		return false
+		msg = "字段范围有误，不在[1-2]中"
+		return msg, false
 	}
-	return true
+	return msg, true
 }
 
-func feildsLogid(key string, index int) bool {
+func fieldsLogid(key string, index int) (string, bool) {
+	msg := ""
 	if key == "" || len(key) != 32 {
-		return false
+		msg = "字段为空|字段长度不等于32"
+		return msg, false
 	}
 
 	if !strings.HasPrefix(key, global.TimeStr) {
-		return false
+		msg = "日期校验失败"
+		return msg, false
+	}
+
+	devno := strings.TrimLeft(key[8:14], "0")
+	if devno != telnetcmd.Devinfo.Dev_No {
+		msg = fmt.Sprintf("设备编号校验失败: %s != %s", devno, telnetcmd.Devinfo.Dev_No)
+		return msg, false
 	}
 
 	LogidMapStoreInc(&LogidMap, key, index)
 
-	return true
+	return msg, true
 }
 
-func fieldsIp(key string) bool {
+func fieldsIp(key string) (string, bool) {
+	msg := ""
 	if key == "" {
-		return false
+		msg = "字段为空"
+		return msg, false
 	}
 
 	if net.ParseIP(key) == nil {
-		return false
+		msg = "IP地址校验失败"
+		return msg, false
 	}
 
-	return true
+	return msg, true
 }
 
-func fieldsPort(key string) bool {
+func fieldsPort(key string) (string, bool) {
+	msg := ""
 	if key == "" {
-		return false
+		msg = "字段为空"
+		return msg, false
 	}
 
 	p, err := strconv.Atoi(key)
 	if err != nil {
-		return false
+		msg = "字段非数值字符"
+		return msg, false
 	}
 
-	if p < 1 || p > 65535 {
-		return false
+	if p < 1 || p > 65534 {
+		msg = "端口范围有误"
+		return msg, false
 	}
-	return true
+	return msg, true
 }
 
-func fieldsMd5(key string, logType int) bool {
+func fieldsMd5(key string, logType int) (string, bool) {
+	msg := ""
 	if key == "" || len(key) != 32 {
-		return false
+		msg = "字段为空|字段长度不等于32"
+		return msg, false
 	}
 	md5 := strings.ToUpper(key)
 	Md5Map[logType].Store(md5, 1)
-	return true
+	return msg, true
 }
 
-func fieldsFileType(key string, index int) bool {
+func fieldsDeviceId(key string) (string, bool) {
+	msg := ""
+	if key == "" || len(key) > 128 {
+		msg = "字段为空|字段长度大于128"
+		return msg, false
+	}
+	return msg, true
+}
+
+func fieldsFileName(key string) (string, bool) {
+	msg := ""
+	if key == "" || len(key) > 48 {
+		msg = "字段为空|字段长度大于48"
+		return msg, false
+	}
+	return msg, true
+}
+
+func fieldsOperateType(key string) (string, bool) {
+	msg := ""
+	if key != "1" && key != "2" && key != "3" {
+		msg = "字段操作类型非法，不在[1-3]中"
+		return msg, false
+	}
+
+	return msg, true
+}
+
+func fieldsFileType(key string, index int) (string, bool) {
+	msg := ""
 	id, err := strconv.Atoi(key)
 	if err != nil {
-		fmt.Printf("transfer string to int failed: %v\n", err)
-		return false
+		msg = "字段非数值字符"
+		return msg, false
 	}
 
 	value, ok := dict.C10_DICT[id]
 	if !ok {
-		//fmt.Printf("app proto value is not in rfc: [%d]\n", id)
-		LogidMapStoreInc(&FileTypeStat, "illegal:"+key, index)
-		return false
+		LogidMapStoreInc(&FileTypeStat, "非法字段:"+key, index)
+		msg = "不在C10表中"
+		return msg, false
 	}
 
 	LogidMapStoreInc(&FileTypeStat, value, index)
-	return true
+	return msg, true
 }
 
-func fieldsAppProto(key string, index int) bool {
+func fieldsAppProto(key string, index int) (string, bool) {
+	msg := ""
 	id, err := strconv.Atoi(key)
 	if err != nil {
-		fmt.Printf("transfer string to int failed: %v\n", err)
-		return false
+		msg = "字段非数值型字符"
+		return msg, false
 	}
 
 	value, ok := dict.C3_DICT[id]
 	if !ok {
-		//fmt.Printf("app proto value is not in rfc: [%d]\n", id)
+		msg = "字段不在C3表中"
 		LogidMapStoreInc(&AppProtoStat, "illegal:"+key, index)
-		return false
+		return msg, false
 	}
 
 	LogidMapStoreInc(&AppProtoStat, value, index)
-	return true
+	return msg, true
 }
 
-func fieldsBusProto(key string, index int) bool {
+func fieldsBusProto(key string, index int) (string, bool) {
+	msg := ""
 	id, err := strconv.Atoi(key)
 	if err != nil {
-		fmt.Printf("transfer string to int failed: %v\n", err)
-		return false
+		msg = "字段非数值型字符"
+		return msg, false
 	}
 
 	value, ok := dict.C4_DICT[id]
 	if !ok {
-		//fmt.Printf("business proto value is not in rfc: [%d]\n", id)
+		msg = "字段不在C4表中"
 		LogidMapStoreInc(&BusProtoStat, "illegal:"+key, index)
-		return false
+		return msg, false
 	}
 
 	LogidMapStoreInc(&BusProtoStat, value, index)
-	return true
+	return msg, true
 }
 
-func fieldsDataProto(key string, index int) bool {
+func fieldsDataProto(key string, index int) (string, bool) {
+	msg := ""
 	id, err := strconv.Atoi(key)
 	if err != nil {
 		fmt.Printf("transfer string to int failed: %v\n", err)
-		return false
+		msg = "字段非数值型字符"
+		return msg, false
 	}
 
 	value, ok := dict.C9_DICT[id]
 	if !ok {
-		//fmt.Printf("business proto value is not in rfc: [%d]\n", id)
 		LogidMapStoreInc(&DataProtoStat, "illegal:"+key, index)
-		return false
+		msg = "字段不在C9表中"
+		return msg, false
 	}
 
 	LogidMapStoreInc(&DataProtoStat, value, index)
-	return true
+	return msg, true
 }
 
-func procC0Fields(fs []string) (int, bool) {
-	if valid := feildsLogid(fs[global.C0_LogID], global.IndexC0); !valid {
-		return global.C0_LogID, false
+func procC0Fields(fs []string) (int, string, bool) {
+	if msg, valid := fieldsLogid(fs[global.C0_LogID], global.IndexC0); !valid {
+		return global.C0_LogID, msg, false
 	}
 
-	if valid := fieldsNull(fs[global.C0_CommandID]); !valid {
-		return global.C0_CommandID, false
+	if msg, valid := fieldsCmdId(fs[global.C0_CommandID]); !valid {
+		return global.C0_CommandID, msg, false
 	}
 
-	if valid := fieldsNull(fs[global.C0_House_ID]); !valid {
-		return global.C0_House_ID, false
+	if msg, valid := fieldsHouseId(fs[global.C0_House_ID]); !valid {
+		return global.C0_House_ID, msg, false
 	}
 
 	//后面可以尝试和分级分类一起进行校验
-	if valid := fieldsNull(fs[global.C0_RuleID]); !valid {
-		return global.C0_RuleID, false
+	if msg, valid := fieldsNull(fs[global.C0_RuleID]); !valid {
+		return global.C0_RuleID, msg, false
 	}
-	if valid := fieldsNull(fs[global.C0_Rule_Desc]); !valid {
-		return global.C0_Rule_Desc, false
-	}
-
-	if valid := fieldsIp(fs[global.C0_AssetsIP]); !valid {
-		return global.C0_AssetsIP, false
+	if msg, valid := fieldsNull(fs[global.C0_Rule_Desc]); !valid {
+		return global.C0_Rule_Desc, msg, false
 	}
 
-	if valid := fieldsFileType(fs[global.C0_DataFileType], global.IndexC0); !valid {
-		return global.C0_DataFileType, false
+	if msg, valid := fieldsIp(fs[global.C0_AssetsIP]); !valid {
+		return global.C0_AssetsIP, msg, false
 	}
 
-	if valid := fieldsSize(fs[global.C0_AssetsSize]); !valid {
-		return global.C0_AssetsSize, false
+	if msg, valid := fieldsFileType(fs[global.C0_DataFileType], global.IndexC0); !valid {
+		return global.C0_DataFileType, msg, false
 	}
 
-	if valid := fieldsInt(fs[global.C0_AssetsNum]); !valid {
-		return global.C0_AssetsNum, false
+	if msg, valid := fieldsSize(fs[global.C0_AssetsSize]); !valid {
+		return global.C0_AssetsSize, msg, false
 	}
 
 	datainfoGroup, _ := strconv.Atoi(fs[global.C0_DataInfoNum])
-	if valid := fieldsIntNoZero(datainfoGroup); !valid {
-		return global.C0_DataInfoNum, false
+	if msg, valid := fieldsIntNoZero(datainfoGroup); !valid {
+		return global.C0_DataInfoNum, msg, false
 	}
 
 	offset := 0
@@ -561,235 +746,258 @@ func procC0Fields(fs []string) (int, bool) {
 		offset = (datainfoGroup - 1) * 3
 	}
 
+	if offset+global.C0_Max != len(fs) {
+		return global.C0_DataInfoNum, "字段数量和分级分类组数不一致", false
+	}
+
+	hitsum := 0
 	for i := 0; i < datainfoGroup; i++ {
-		if valid, ret := fieldsDataInfoDict(fs[global.C0_DataType+3*i : global.C0_DataType+3*i+3]); !valid {
-			return global.C0_DataType + 3*i + ret, false
+		if valid, ret, msg := fieldsDataInfoDict(fs[global.C0_DataType+3*i:global.C0_DataType+3*i+3], &hitsum); !valid {
+			return global.C0_DataType + 3*i + ret, msg, false
 		}
 	}
 
-	/*
-		for i := 0; i < offset+3; i++ {
-			if valid := fieldsDataInfo(fs[global.C0_DataType+i], i%3); !valid {
-				return global.C0_DataType + i%3, false
-			}
-		}
-	*/
-
-	if valid := fieldsUpload(fs[global.C0_IsUploadFile+offset]); !valid {
-		return global.C0_IsUploadFile, false
+	//字段顺序在前面
+	if msg, valid := fieldsAssetNum(fs[global.C0_AssetsNum], hitsum); !valid {
+		return global.C0_AssetsNum, msg, false
 	}
 
-	if valid := fieldsMd5(fs[global.C0_FileMD5+offset], global.IndexC0); !valid {
-		return global.C0_FileMD5, false
+	if msg, valid := fieldsUpload(fs[global.C0_IsUploadFile+offset]); !valid {
+		return global.C0_IsUploadFile, msg, false
 	}
 
-	if valid := fieldsNull(fs[global.C0_CurTime+offset]); !valid {
-		return global.C0_CurTime, false
+	if msg, valid := fieldsMd5(fs[global.C0_FileMD5+offset], global.IndexC0); !valid {
+		return global.C0_FileMD5, msg, false
 	}
 
-	if valid := fieldsIp(fs[global.C0_SrcIP+offset]); !valid {
-		return global.C0_SrcIP, false
+	if msg, valid := fieldsNull(fs[global.C0_CurTime+offset]); !valid {
+		return global.C0_CurTime, msg, false
 	}
 
-	if valid := fieldsIp(fs[global.C0_DestIP+offset]); !valid {
-		return global.C0_DestIP, false
+	if msg, valid := fieldsIp(fs[global.C0_SrcIP+offset]); !valid {
+		return global.C0_SrcIP, msg, false
 	}
 
-	if valid := fieldsPort(fs[global.C0_SrcPort+offset]); !valid {
-		return global.C0_SrcPort, false
+	if msg, valid := fieldsIp(fs[global.C0_DestIP+offset]); !valid {
+		return global.C0_DestIP, msg, false
 	}
 
-	if valid := fieldsPort(fs[global.C0_DestPort+offset]); !valid {
-		return global.C0_DestPort, false
+	if msg, valid := fieldsPort(fs[global.C0_SrcPort+offset]); !valid {
+		return global.C0_SrcPort, msg, false
 	}
 
-	if valid := fieldsL4Proto(fs[global.C0_ProtocolType+offset]); !valid {
-		return global.C0_ProtocolType, false
+	if msg, valid := fieldsPort(fs[global.C0_DestPort+offset]); !valid {
+		return global.C0_DestPort, msg, false
 	}
 
-	if valid := fieldsAppProto(fs[global.C0_ApplicationProtocol+offset], global.IndexC0); !valid {
-		return global.C0_ApplicationProtocol, false
+	if msg, valid := fieldsL4Proto(fs[global.C0_ProtocolType+offset]); !valid {
+		return global.C0_ProtocolType, msg, false
 	}
 
-	if valid := fieldsBusProto(fs[global.C0_BusinessProtocol+offset], global.IndexC0); !valid {
-		return global.C0_BusinessProtocol, false
+	if msg, valid := fieldsAppProto(fs[global.C0_ApplicationProtocol+offset], global.IndexC0); !valid {
+		return global.C0_ApplicationProtocol, msg, false
 	}
 
-	if valid := fieldsMatch(fs[global.C0_IsMatchEvent+offset]); !valid {
-		return global.C0_IsMatchEvent, false
+	if msg, valid := fieldsBusProto(fs[global.C0_BusinessProtocol+offset], global.IndexC0); !valid {
+		return global.C0_BusinessProtocol, msg, false
 	}
 
-	return 0, true
+	if msg, valid := fieldsMatch(fs[global.C0_IsMatchEvent+offset]); !valid {
+		return global.C0_IsMatchEvent, msg, false
+	}
+
+	return 0, "", true
 }
 
-func procC1Fields(fs []string) (int, bool) {
-	if valid := feildsLogid(fs[global.C1_LogID], global.IndexC1); !valid {
-		return global.C1_LogID, false
+func procC1Fields(fs []string) (int, string, bool) {
+	if msg, valid := fieldsLogid(fs[global.C1_LogID], global.IndexC1); !valid {
+		return global.C1_LogID, msg, false
 	}
 
-	if valid := fieldsNull(fs[global.C1_CommandId]); !valid {
-		return global.C1_CommandId, false
+	if msg, valid := fieldsCmdId(fs[global.C1_CommandId]); !valid {
+		return global.C1_CommandId, msg, false
 	}
 
-	if valid := fieldsNull(fs[global.C1_House_ID]); !valid {
-		return global.C1_House_ID, false
+	if msg, valid := fieldsHouseId(fs[global.C1_House_ID]); !valid {
+		return global.C1_House_ID, msg, false
 	}
 
-	if valid := fieldsNull(fs[global.C1_RuleID]); !valid {
-		return global.C1_RuleID, false
+	if msg, valid := fieldsNull(fs[global.C1_RuleID]); !valid {
+		return global.C1_RuleID, msg, false
 	}
 
-	if valid := fieldsNull(fs[global.C1_Rule_Desc]); !valid {
-		return global.C1_Rule_Desc, false
+	if msg, valid := fieldsNull(fs[global.C1_Rule_Desc]); !valid {
+		return global.C1_Rule_Desc, msg, false
 	}
 
-	if valid := fieldsDataProto(fs[global.C1_Proto], global.IndexC1); !valid {
-		return global.C1_Proto, false
+	if msg, valid := fieldsDataProto(fs[global.C1_Proto], global.IndexC1); !valid {
+		return global.C1_Proto, msg, false
 	}
 
-	if valid := fieldsDomain(fs[global.C1_Proto], fs[global.C1_Domain]); !valid {
-		return global.C1_Domain, false
+	if msg, valid := fieldsDomain(fs[global.C1_Proto], fs[global.C1_Domain]); !valid {
+		return global.C1_Domain, msg, false
 	}
 
-	if valid := fieldsUrl(fs[global.C1_Proto], fs[global.C1_Url]); !valid {
-		return global.C1_Url, false
+	if msg, valid := fieldsUrl(fs[global.C1_Proto], fs[global.C1_Url]); !valid {
+		return global.C1_Url, msg, false
 	}
 
-	if valid := fieldsMatch(fs[global.C1_Title]); !valid {
-		return global.C1_Title, false
+	if msg, valid := fieldsMatch(fs[global.C1_Title]); !valid {
+		return global.C1_Title, msg, false
 	}
 
-	if valid := fieldsEvent(fs[global.C1_EventTypeID], fs[global.C1_EventSubType]); !valid {
-		return global.C1_EventTypeID, false
+	if msg, valid := fieldsEvent(fs[global.C1_EventTypeID], fs[global.C1_EventSubType]); !valid {
+		return global.C1_EventTypeID, msg, false
 	}
 
-	if valid := fieldsIp(fs[global.C1_SrcIP]); !valid {
-		return global.C1_SrcIP, false
+	if msg, valid := fieldsIp(fs[global.C1_SrcIP]); !valid {
+		return global.C1_SrcIP, msg, false
 	}
 
-	if valid := fieldsIp(fs[global.C1_DestIP]); !valid {
-		return global.C1_DestIP, false
+	if msg, valid := fieldsIp(fs[global.C1_DestIP]); !valid {
+		return global.C1_DestIP, msg, false
 	}
 
-	if valid := fieldsPort(fs[global.C1_SrcPort]); !valid {
-		return global.C1_SrcPort, false
+	if msg, valid := fieldsPort(fs[global.C1_SrcPort]); !valid {
+		return global.C1_SrcPort, msg, false
 	}
 
-	if valid := fieldsPort(fs[global.C1_DestPort]); !valid {
-		return global.C1_DestPort, false
+	if msg, valid := fieldsPort(fs[global.C1_DestPort]); !valid {
+		return global.C1_DestPort, msg, false
 	}
 
-	if valid := fieldsFileType(fs[global.C1_FileType], global.IndexC1); !valid {
-		return global.C1_FileType, false
+	if msg, valid := fieldsFileType(fs[global.C1_FileType], global.IndexC1); !valid {
+		return global.C1_FileType, msg, false
 	}
 
-	if valid := fieldsSize(fs[global.C1_FileSize]); !valid {
-		return global.C1_FileSize, false
+	if msg, valid := fieldsSize(fs[global.C1_FileSize]); !valid {
+		return global.C1_FileSize, msg, false
 	}
 
-	if valid := fieldsNoZero(fs[global.C1_DataNum]); !valid {
-		return global.C1_DataNum, false
+	if msg, valid := fieldsNoZero(fs[global.C1_DataNum]); !valid {
+		return global.C1_DataNum, msg, false
 	}
 
-	if valid := fieldsDataType(fs[global.C1_DataType]); !valid {
-		return global.C1_DataType, false
+	if msg, valid := fieldsDataType(fs[global.C1_DataType]); !valid {
+		return global.C1_DataType, msg, false
 	}
 
-	if valid := fieldsMd5(fs[global.C1_FileMD5], global.IndexC1); !valid {
-		return global.C1_FileMD5, false
+	if msg, valid := fieldsMd5(fs[global.C1_FileMD5], global.IndexC1); !valid {
+		return global.C1_FileMD5, msg, false
 	}
 
-	if valid := fieldsNull(fs[global.C1_GatherTime]); !valid {
-		return global.C1_GatherTime, false
+	if msg, valid := fieldsNull(fs[global.C1_GatherTime]); !valid {
+		return global.C1_GatherTime, msg, false
 	}
 
-	return 0, true
+	return 0, "", true
 }
 
-func procC4Fields(fs []string) (int, bool) {
-	if valid := fieldsNull(fs[global.C4_CommandId]); !valid {
-		return global.C4_CommandId, false
+func procC4Fields(fs []string) (int, string, bool) {
+	if msg, valid := fieldsCmdId(fs[global.C4_CommandId]); !valid {
+		return global.C4_CommandId, msg, false
 	}
-	if valid := feildsLogid(fs[global.C4_LogID], global.IndexC4); !valid {
-		return global.C4_LogID, false
+	if msg, valid := fieldsLogid(fs[global.C4_LogID], global.IndexC4); !valid {
+		return global.C4_LogID, msg, false
 	}
-	if valid := fieldsNull(fs[global.C4_HouseID]); !valid {
-		return global.C4_HouseID, false
+	if msg, valid := fieldsHouseId(fs[global.C4_HouseID]); !valid {
+		return global.C4_HouseID, msg, false
 	}
-	if valid := fieldsNoZero(fs[global.C4_StrategyId]); !valid {
-		return global.C4_StrategyId, false
-	}
-	if valid := fieldsNull(fs[global.C4_KeyWord]); !valid {
-		return global.C4_KeyWord, false
-	}
-	if valid := fieldsFeatureid(fs[global.C4_Features]); !valid {
-		return global.C4_Features, false
-	}
-	if valid := fieldsNoZero(fs[global.C4_AssetsNum]); !valid {
-		return global.C4_AssetsNum, false
-	}
-	if valid := fieldsIp(fs[global.C4_SrcIP]); !valid {
-		return global.C4_SrcIP, false
-	}
-	if valid := fieldsIp(fs[global.C4_DestIP]); !valid {
-		return global.C4_DestIP, false
-	}
-	if valid := fieldsPort(fs[global.C4_ScrPort]); !valid {
-		return global.C4_ScrPort, false
-	}
-	if valid := fieldsPort(fs[global.C4_DestPort]); !valid {
-		return global.C4_DestPort, false
-	}
-	if valid := fieldsDomain(fs[global.C4_Proto], fs[global.C4_Domain]); !valid {
-		return global.C4_Domain, false
-	}
-	if valid := fieldsUrl(fs[global.C4_Proto], fs[global.C4_Url]); !valid {
-		return global.C4_Url, false
-	}
-	if valid := fieldsMatch(fs[global.C4_DataDirection]); !valid {
-		return global.C4_DataDirection, false
+	if msg, valid := fieldsNoZero(fs[global.C4_StrategyId]); !valid {
+		return global.C4_StrategyId, msg, false
 	}
 
-	if valid := fieldsDataProto(fs[global.C4_Proto], global.IndexC4); !valid {
-		return global.C4_Proto, false
+	keyhit := 0
+	if msg, valid := fieldsKeyword(fs[global.C4_KeyWord], &keyhit); !valid {
+		return global.C4_KeyWord, msg, false
+	}
+	if msg, valid := fieldsFeatureid(fs[global.C4_Features]); !valid {
+		return global.C4_Features, msg, false
+	}
+	if msg, valid := fieldsC4AssetsNum(fs[global.C4_AssetsNum], keyhit); !valid {
+		return global.C4_AssetsNum, msg, false
+	}
+	if msg, valid := fieldsIp(fs[global.C4_SrcIP]); !valid {
+		return global.C4_SrcIP, msg, false
+	}
+	if msg, valid := fieldsIp(fs[global.C4_DestIP]); !valid {
+		return global.C4_DestIP, msg, false
+	}
+	if msg, valid := fieldsPort(fs[global.C4_ScrPort]); !valid {
+		return global.C4_ScrPort, msg, false
+	}
+	if msg, valid := fieldsPort(fs[global.C4_DestPort]); !valid {
+		return global.C4_DestPort, msg, false
+	}
+	if msg, valid := fieldsDomain(fs[global.C4_Proto], fs[global.C4_Domain]); !valid {
+		return global.C4_Domain, msg, false
+	}
+	if msg, valid := fieldsUrl(fs[global.C4_Proto], fs[global.C4_Url]); !valid {
+		return global.C4_Url, msg, false
+	}
+	if msg, valid := fieldsMatch(fs[global.C4_DataDirection]); !valid {
+		return global.C4_DataDirection, msg, false
 	}
 
-	if valid := fieldsFileType(fs[global.C4_FileType], global.IndexC4); !valid {
-		return global.C4_FileType, false
+	if msg, valid := fieldsDataProto(fs[global.C4_Proto], global.IndexC4); !valid {
+		return global.C4_Proto, msg, false
 	}
 
-	if valid := fieldsSize(fs[global.C4_FileSize]); !valid {
-		return global.C4_FileSize, false
+	if msg, valid := fieldsFileType(fs[global.C4_FileType], global.IndexC4); !valid {
+		return global.C4_FileType, msg, false
 	}
 
-	if valid := fieldsNull(fs[global.C4_AttachMent]); !valid {
-		return global.C4_AttachMent, false
+	if msg, valid := fieldsSize(fs[global.C4_FileSize]); !valid {
+		return global.C4_FileSize, msg, false
 	}
 
-	if valid := fieldsMd5(fs[global.C4_FileMD5], global.IndexC4); !valid {
-		return global.C4_FileMD5, false
+	if msg, valid := fieldsAttach(fs[global.C4_AttachMent]); !valid {
+		return global.C4_AttachMent, msg, false
 	}
 
-	if valid := fieldsNull(fs[global.C4_GatherTime]); !valid {
-		return global.C4_GatherTime, false
+	if msg, valid := fieldsMd5(fs[global.C4_FileMD5], global.IndexC4); !valid {
+		return global.C4_FileMD5, msg, false
 	}
 
-	return 0, true
+	if msg, valid := fieldsNull(fs[global.C4_GatherTime]); !valid {
+		return global.C4_GatherTime, msg, false
+	}
+
+	return 0, "", true
 }
 
 // 审计日志只检查logid是否重复
-func procA8Fields(fs []string, index int) (int, bool) {
-	key := fs[0]
-	if key == "" || len(key) != 32 {
-		return 0, false
+func procA8Fields(fs []string, index int) (int, string, bool) {
+	if msg, valid := fieldsLogid(fs[global.A8_LogId], global.IndexA8); !valid {
+		return global.A8_LogId, msg, false
 	}
 
-	if !strings.HasPrefix(key, global.TimeStr) {
-		return 0, false
+	if msg, valid := fieldsHouseId(fs[global.A8_HouseId]); !valid {
+		return global.A8_HouseId, msg, false
 	}
 
-	LogidMapStoreInc(&LogidMap, key, index)
-	return 0, true
+	if fs[global.A8_DeviceType] != "2" {
+		return global.A8_HouseId, "DeviceType字段不是2", false
+	}
+
+	if msg, valid := fieldsDeviceId(fs[global.A8_DeviceId]); !valid {
+		return global.A8_DeviceId, msg, false
+	}
+
+	if fs[global.A8_IP] != telnetcmd.Devinfo.Dev_IP {
+		rea := fmt.Sprintf("设备ip地址不匹配:[%s != %s]", fs[global.A8_IP], telnetcmd.Devinfo.Dev_IP)
+		return global.A8_IP, rea, false
+	}
+
+	if msg, valid := fieldsFileName(fs[global.A8_FileName]); !valid {
+		return global.A8_FileName, msg, false
+	}
+
+	if msg, valid := fieldsOperateType(fs[global.A8_OperateType]); !valid {
+		return global.A8_OperateType, msg, false
+	}
+
+	return 0, "", true
 }
 
 func recordC0Info(fs []string) {
@@ -826,6 +1034,7 @@ func recordC0Info(fs []string) {
 		Business:    business,
 		CrossBoard:  cross,
 		FileType:    filetype,
+		FileSize:    fs[global.C0_AssetsSize],
 	}
 
 	SampleMapUpdateC0(&SampleMap, fs[global.C0_FileMD5+offset], info)
@@ -853,19 +1062,181 @@ func recordC1Info(fs []string) {
 	return
 }
 
-func recordLogInvalid(cmap map[string]CheckInfo, line string, info CheckInfo, index int) {
-	cmap[line] = info
+func recordC4Info(fs []string) {
+	filetype, _ := strconv.Atoi(fs[global.C4_FileType])
+	info := SampleC4Info{
+		Keyword:  fs[global.C4_KeyWord],
+		FileType: filetype,
+		FileSize: fs[global.C4_FileSize],
+	}
+	SampleMapUpdateC4(&SampleMap, fs[global.C4_FileMD5], info)
+}
+
+func recordLogInvalid(line string, info CheckInfo, index int) {
+	LogCheckMap[index][line] = info
 	incLogInvalidCnt(index)
+}
+
+func checkSampleFileName(fn string) bool {
+	fs := strings.Split(filepath.Base(fn), "+")
+
+	fname := global.LogTypeIndex_Name[global.IndexC3]
+
+	if len(fs) != global.FN1_Max {
+		info := CheckInfo{
+			Reason:   fmt.Sprintf("%s文件名字段个数[%d]不符", fname, len(fs)),
+			Filenmae: fn,
+		}
+		recordLogInvalid(fn, info, global.IndexC3)
+		return false
+	}
+
+	for i := 0; i < global.FN1_Max; i++ {
+		var rea string
+		invalid := false
+		switch i {
+		case global.FN1_Version:
+			if fs[i] != "0x31" {
+				invalid = true
+				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN1_Fields_Name[i], i+1, fs[i])
+			}
+		case global.FN1_Module:
+			if fs[i] != "0x06c3" {
+				invalid = true
+				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN1_Fields_Name[i], i+1, fs[i])
+			}
+		case global.FN1_CommandId:
+			// todo later
+		case global.FN1_Site:
+			if fs[i] != telnetcmd.Devinfo.Dev_Site {
+				invalid = true
+				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN1_Fields_Name[i], i+1, fs[i])
+			}
+		case global.FN1_Manu:
+			if fs[i] != global.Manufactor {
+				invalid = true
+				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN1_Fields_Name[i], i+1, fs[i])
+			}
+		case global.FN1_Devno:
+			if fs[i] != telnetcmd.Devinfo.Dev_No {
+				invalid = true
+				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN1_Fields_Name[i], i+1, fs[i])
+			}
+		case global.FN1_MD5:
+			str := strings.TrimSuffix(fs[i], ".zip")
+			if len(str) != 32 {
+				invalid = true
+				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN1_Fields_Name[i], i+1, fs[i])
+			} else {
+				Md5Map[global.IndexC3].Store(str, 1)
+			}
+		}
+
+		if invalid {
+			info := CheckInfo{
+				Reason:   rea,
+				Filenmae: fn,
+			}
+			recordLogInvalid(fn, info, global.IndexC3)
+			return false
+		}
+	}
+
+	return true
+}
+
+func checkLogFileName(fn string, logtype int) bool {
+	fs := strings.Split(filepath.Base(fn), "+")
+
+	fname := global.LogTypeIndex_Name[logtype]
+
+	if len(fs) != global.FN_Max {
+		info := CheckInfo{
+			Reason:   fmt.Sprintf("%s文件名字段个数[%d]不符", fname, len(fs)),
+			Filenmae: fn,
+		}
+		recordLogInvalid(fn, info, global.IndexC0)
+		return false
+	}
+	for i := 0; i < global.FN_Max; i++ {
+		var rea string
+		invalid := false
+		switch i {
+		case global.FN_Version:
+			if fs[i] != "0x31" {
+				invalid = true
+				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
+			}
+		case global.FN_Module:
+			if logtype == global.IndexC0 && fs[i] != "0x06c0" {
+				invalid = true
+				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
+			} else if logtype == global.IndexC1 && fs[i] != "0x06c1" {
+				invalid = true
+				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
+			} else if logtype == global.IndexC4 && fs[i] != "0x06c4" {
+				invalid = true
+				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
+			} else if logtype == global.IndexA8 && fs[i] != "0x04a8" {
+				invalid = true
+				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
+			}
+		case global.FN_Filetype:
+			if fs[i] != "000" {
+				invalid = true
+				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
+			}
+		case global.FN_Site:
+			if fs[i] != telnetcmd.Devinfo.Dev_Site {
+				invalid = true
+				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
+			}
+		case global.FN_Manu:
+			if fs[i] != global.Manufactor {
+				invalid = true
+				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
+			}
+		case global.FN_Devno:
+			if fs[i] != telnetcmd.Devinfo.Dev_No {
+				invalid = true
+				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
+			}
+		case global.FN_Date:
+			str := strings.TrimSuffix(fs[i], ".tar.gz")
+			if len(str) != 20 {
+				invalid = true
+				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
+			}
+			if str[:8] != global.TimeStr {
+				invalid = true
+				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
+			}
+		}
+
+		if invalid {
+			info := CheckInfo{
+				Reason:   rea,
+				Filenmae: fn,
+			}
+			recordLogInvalid(fn, info, logtype)
+			return false
+		}
+
+	}
+
+	return true
 }
 
 func procC0Ctx(line, filename string) {
 	fs := strings.Split(line, "|")
+	fname := global.LogTypeIndex_Name[global.IndexC0]
+
 	if len(fs) < 24 {
 		info := CheckInfo{
-			Reason:   fmt.Sprintf("字段个数%d不符", len(fs)),
+			Reason:   fmt.Sprintf("%s字段个数[%d]不符", fname, len(fs)),
 			Filenmae: filename,
 		}
-		recordLogInvalid(C0_CheckMap, line, info, global.IndexC0)
+		recordLogInvalid(line, info, global.IndexC0)
 		return
 	}
 	datainfoGroup, _ := strconv.Atoi(fs[global.C0_DataInfoNum])
@@ -873,58 +1244,58 @@ func procC0Ctx(line, filename string) {
 		nums := 24 + (datainfoGroup-1)*3
 		if len(fs) != nums {
 			info := CheckInfo{
-				Reason:   fmt.Sprintf("字段个数%d不符", len(fs)),
+				Reason:   fmt.Sprintf("%s字段个数[%d]不符", fname, len(fs)),
 				Filenmae: filename,
 			}
-			recordLogInvalid(C0_CheckMap, line, info, global.IndexC0)
+			recordLogInvalid(line, info, global.IndexC0)
 			return
 		}
 	} else {
 		if len(fs) != 24 {
 			info := CheckInfo{
-				Reason:   fmt.Sprintf("字段个数%d不符", len(fs)),
+				Reason:   fmt.Sprintf("%s字段个数[%d]不符", fname, len(fs)),
 				Filenmae: filename,
 			}
-			recordLogInvalid(C0_CheckMap, line, info, global.IndexC0)
+			recordLogInvalid(line, info, global.IndexC0)
 			return
 		}
 	}
 
-	if index, valid := procC0Fields(fs); valid {
+	if index, rea, valid := procC0Fields(fs); valid {
 		recordC0Info(fs)
 		incLogValidCnt(global.IndexC0)
 	} else {
 		info := CheckInfo{
-			Reason:   fmt.Sprintf("第%d个字段非法", index+1),
+			Reason:   fmt.Sprintf("字段[%s][%d]校验失败: %s", global.C0_Name[index], index+1, rea),
 			Filenmae: filename,
 		}
-		recordLogInvalid(C0_CheckMap, line, info, global.IndexC0)
+		recordLogInvalid(line, info, global.IndexC0)
 	}
 	return
 }
 
 func procC1Ctx(line, filename string) {
 	fs := strings.Split(line, "|")
+	fname := global.LogTypeIndex_Name[global.IndexC1]
+
 	if len(fs) != 21 {
-		//fmt.Printf("invalid log:[%s]\n", line)
 		info := CheckInfo{
-			Reason:   fmt.Sprintf("字段个数%d不符", len(fs)),
+			Reason:   fmt.Sprintf("%s字段个数[%d]不符", fname, len(fs)),
 			Filenmae: filename,
 		}
-		recordLogInvalid(C1_CheckMap, line, info, global.IndexC1)
+		recordLogInvalid(line, info, global.IndexC1)
 		return
 	}
 
-	if index, valid := procC1Fields(fs); valid {
+	if index, rea, valid := procC1Fields(fs); valid {
 		recordC1Info(fs)
 		incLogValidCnt(global.IndexC1)
 	} else {
-		//fmt.Printf("invalid log:[%s]\n", line)
 		info := CheckInfo{
-			Reason:   fmt.Sprintf("第%d个字段非法", index+1),
+			Reason:   fmt.Sprintf("字段[%s][%d]校验失败: %s", global.C1_Name[index], index+1, rea),
 			Filenmae: filename,
 		}
-		recordLogInvalid(C1_CheckMap, line, info, global.IndexC1)
+		recordLogInvalid(line, info, global.IndexC1)
 	}
 	return
 }
@@ -939,47 +1310,50 @@ func procC3Ctx(ctx, filename string) {
 
 func procC4Ctx(line, filename string) {
 	fs := strings.Split(line, "|")
+	fname := global.LogTypeIndex_Name[global.IndexC4]
 	if len(fs) != 20 {
 		info := CheckInfo{
-			Reason:   fmt.Sprintf("字段个数%d不符", len(fs)),
+			Reason:   fmt.Sprintf("%s字段个数[%d]不符", fname, len(fs)),
 			Filenmae: filename,
 		}
-		recordLogInvalid(C4_CheckMap, line, info, global.IndexC4)
+		recordLogInvalid(line, info, global.IndexC4)
 
 		return
 	}
 
-	if index, valid := procC4Fields(fs); valid {
+	if index, rea, valid := procC4Fields(fs); valid {
 		incLogValidCnt(global.IndexC4)
+		recordC4Info(fs)
 	} else {
 		info := CheckInfo{
-			Reason:   fmt.Sprintf("第%d个字段非法", index+1),
+			Reason:   fmt.Sprintf("字段[%s][%d]校验失败: %s", global.C4_Name[index], index+1, rea),
 			Filenmae: filename,
 		}
-		recordLogInvalid(C4_CheckMap, line, info, global.IndexC4)
+		recordLogInvalid(line, info, global.IndexC4)
 	}
 	return
 }
 
 func procA8Ctx(line, filename string) {
 	fs := strings.Split(line, "|")
+	fname := global.LogTypeIndex_Name[global.IndexA8]
 	if len(fs) != 9 && len(fs) != 10 {
 		info := CheckInfo{
-			Reason:   fmt.Sprintf("字段个数%d不符", len(fs)),
+			Reason:   fmt.Sprintf("%s字段个数[%d]不符", fname, len(fs)),
 			Filenmae: filename,
 		}
-		recordLogInvalid(A8_CheckMap, line, info, global.IndexA8)
+		recordLogInvalid(line, info, global.IndexA8)
 		return
 	}
 
-	if index, valid := procA8Fields(fs, global.IndexA8); valid {
+	if index, rea, valid := procA8Fields(fs, global.IndexA8); valid {
 		incLogValidCnt(global.IndexA8)
 	} else {
 		info := CheckInfo{
-			Reason:   fmt.Sprintf("第%d个字段非法", index+1),
+			Reason:   fmt.Sprintf("字段[%s][%d]校验失败: %s", global.A8_Name[index], index+1, rea),
 			Filenmae: filename,
 		}
-		recordLogInvalid(A8_CheckMap, line, info, global.IndexA8)
+		recordLogInvalid(line, info, global.IndexA8)
 	}
 	return
 }
@@ -1080,6 +1454,10 @@ func ProcLogPath(path string, wg *sync.WaitGroup, logType int) error {
 
 		if !d.IsDir() {
 			if strings.HasSuffix(d.Name(), "tar.gz") {
+				if valid := checkLogFileName(dir, logType); !valid {
+					incFileErrCnt(logType)
+					return nil
+				}
 				incFileCnt(logType)
 				procTargzFile(dir, logType)
 			}
@@ -1113,11 +1491,10 @@ func ProcEvidencePath(dir string, wg *sync.WaitGroup) error {
 
 		if !d.IsDir() {
 			if strings.HasSuffix(d.Name(), "zip") {
-				incFileCnt(global.IndexC3)
-				basename := strings.TrimSuffix(filepath.Base(d.Name()), ".zip")
-				fields := strings.Split(basename, "+")
-				if len(fields) == 7 {
-					Md5Map[global.IndexC3].Store(fields[6], 1)
+				if valid := checkSampleFileName(d.Name()); !valid {
+					incFileErrCnt(global.IndexC3)
+				} else {
+					incFileCnt(global.IndexC3)
 				}
 			}
 		}
@@ -1196,8 +1573,7 @@ func AnalyzeLogFile(gptah, date, opath string) {
 }
 
 func init() {
-	C0_CheckMap = make(map[string]CheckInfo)
-	C1_CheckMap = make(map[string]CheckInfo)
-	C4_CheckMap = make(map[string]CheckInfo)
-	A8_CheckMap = make(map[string]CheckInfo)
+	for i := 0; i < global.IndexMax; i++ {
+		LogCheckMap[i] = make(map[string]CheckInfo)
+	}
 }
