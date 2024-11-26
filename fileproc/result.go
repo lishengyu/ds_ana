@@ -19,11 +19,19 @@ func printfItemResult(item, res string, succ int) {
 	}
 }
 
+func printfItemResult1(item string, fail int) {
+	if fail == 0 {
+		fmt.Printf("\t[PASS] %s\tsucc\n", item)
+	} else {
+		fmt.Printf("\t[FAIL] %s\t%d records\n", item, fail)
+	}
+}
+
 func printfItemResultCnt(item string, all, fail int) {
 	if fail == 0 {
-		fmt.Printf("\t[PASS] %s:\ttotal:%d\n", item, all)
+		fmt.Printf("\t[PASS] %s:\t%d records\n", item, all)
 	} else {
-		fmt.Printf("\t[FAIL] %s:\ttotal:%d\tfail:%d\n", item, all, fail)
+		fmt.Printf("\t[FAIL] %s:\tsucc:%d records\tfail:%d records\n", item, all, fail)
 	}
 }
 
@@ -41,6 +49,13 @@ func CheckMd5(ex *excelize.File, index int) {
 		fmt.Printf("new stream writer failed: %v\n", err)
 		return
 	}
+
+	err = streamWriter.SetColWidth(1, 2, 50)
+	if err != nil {
+		fmt.Printf("SetColWidth failed: %v\n", err)
+		return
+	}
+
 	defer func() {
 		if err = streamWriter.Flush(); err != nil {
 			fmt.Printf("结束流式写入失败: %v\n", err)
@@ -215,7 +230,23 @@ func CheckLogCnt(ex *excelize.File, index int) {
 	return
 }
 
-func CheckLogId(ex *excelize.File, index int, name string, m *sync.Map, logtype int) (int, int) {
+func getLogNameList(flag int) string {
+	name := ""
+	for i := 0; i < global.IndexMax; i++ {
+		exist := flag & (1 << i)
+		if exist != 0 {
+			if name == "" {
+				name = global.LogTypeIndex_Name[i]
+			} else {
+				name += "/" + global.LogTypeIndex_Name[i]
+			}
+		}
+	}
+
+	return name
+}
+
+func CheckLogId(ex *excelize.File, name string, m *sync.Map) (int, int) {
 	_, err := ex.NewSheet(name)
 	if err != nil {
 		fmt.Printf("new sheet failed:%v\n", err)
@@ -227,13 +258,19 @@ func CheckLogId(ex *excelize.File, index int, name string, m *sync.Map, logtype 
 		fmt.Printf("new stream writer failed: %v\n", err)
 		return 0, 0
 	}
+	err = streamWriter.SetColWidth(1, 3, 50)
+	if err != nil {
+		fmt.Printf("SetColWidth failed: %v\n", err)
+		return 0, 0
+	}
+
 	defer func() {
 		if err = streamWriter.Flush(); err != nil {
 			fmt.Printf("结束流式写入失败: %v\n", err)
 		}
 	}()
 
-	if err := streamWriter.SetRow("A1", []interface{}{name, "出现次数"}); err != nil {
+	if err := streamWriter.SetRow("A1", []interface{}{"LogId", "重复次数", "重复类型"}); err != nil {
 		fmt.Printf("stream writer write failed: %v\n", err)
 		return 0, 0
 	}
@@ -242,22 +279,38 @@ func CheckLogId(ex *excelize.File, index int, name string, m *sync.Map, logtype 
 	invalid := 0
 	m.Range(func(key, value interface{}) bool {
 		v := value.(*LogIdInfo)
-		exist := v.IdFlag & (1 << logtype)
-		if exist != 0 {
-			record++
-			sum := 0
-			for _, cnt := range v.Cnt {
-				sum += cnt
-			}
-
-			if sum > 1 {
-				tmp := []interface{}{
-					key,
-					v.Cnt,
+		for i := 0; i < global.IndexMax; i++ {
+			exist := v.IdFlag & (1 << i)
+			if exist != 0 {
+				record++
+				if v.Cnt[i] > 1 {
+					tmp := []interface{}{
+						key,
+						v.Cnt,
+						fmt.Sprintf("%s话单重复", global.LogTypeIndex_Name[i]),
+					}
+					invalid++
+					_ = streamWriter.SetRow("A"+strconv.Itoa(invalid+1), tmp)
+					return true
 				}
-				invalid++
-				_ = streamWriter.SetRow("A"+strconv.Itoa(invalid+1), tmp)
 			}
+		}
+
+		sum := 0
+		for _, cnt := range v.Cnt {
+			sum += cnt
+		}
+
+		if sum > 1 {
+			rea := getLogNameList(v.IdFlag)
+			tmp := []interface{}{
+				key,
+				v.Cnt,
+				fmt.Sprintf("%s话单重复", rea),
+			}
+			invalid++
+			_ = streamWriter.SetRow("A"+strconv.Itoa(invalid+1), tmp)
+			return true
 		}
 
 		return true
@@ -269,18 +322,67 @@ func CheckLogId(ex *excelize.File, index int, name string, m *sync.Map, logtype 
 func CheckGLogId(ex *excelize.File, index int) {
 	fmt.Printf("Check Item %03d [Logid校验]\n", index)
 
-	record, invalid := CheckLogId(ex, index, "Logid校验C0", &LogidMap, global.IndexC0)
-	printfItemResultCnt(fmt.Sprintf("%s校验", global.LogName[global.IndexC0]), record, invalid)
+	record, invalid := CheckLogId(ex, "Logid校验", &LogidMap)
+	printfItemResultCnt("Logid校验", record, invalid)
 
-	record, invalid = CheckLogId(ex, index, "Logid校验C1", &LogidMap, global.IndexC1)
-	printfItemResultCnt(fmt.Sprintf("%s校验", global.LogName[global.IndexC1]), record, invalid)
+	return
+}
 
-	record, invalid = CheckLogId(ex, index, "Logid校验C4", &LogidMap, global.IndexC4)
-	printfItemResultCnt(fmt.Sprintf("%s校验", global.LogName[global.IndexC4]), record, invalid)
+func writeRow(streamWriter *excelize.StreamWriter, m *sync.Map, dictIndex int, record, invalid *int) {
+	name := fmt.Sprintf("%s_类型", dict.DictIndex_Name[dictIndex])
+	*record++
+	if err := streamWriter.SetRow("A"+strconv.Itoa(*record), []interface{}{name, "计数"}); err != nil {
+		fmt.Printf("stream writer write failed: %v\n", err)
+		return
+	}
 
-	record, invalid = CheckLogId(ex, index, "Logid校验A8", &LogidMap, global.IndexA8)
-	printfItemResultCnt(fmt.Sprintf("%s校验", global.LogName[global.IndexA8]), record, invalid)
+	dname := dict.DictIndex_Name[dictIndex]
+	m.Range(func(key, value interface{}) bool {
+		v := value.(*LogIdInfo)
+		exist := v.IdFlag & (1 << global.IndexC0)
+		if exist != 0 {
+			*record++
+			tmp := []interface{}{
+				fmt.Sprintf("%s_%v", dname, key),
+				v.Cnt[global.IndexC0],
+			}
+			if strings.Contains(key.(string), "illegal:") {
+				*invalid++
+			}
+			_ = streamWriter.SetRow("A"+strconv.Itoa(*record), tmp)
+		}
+		return true
+	})
+	*record++
+	return
+}
 
+func writeRow1(streamWriter *excelize.StreamWriter, m *sync.Map, dictIndex int, record, invalid *int) {
+	name := fmt.Sprintf("%s_类型", dict.DictIndex_Name[dictIndex])
+	*record++
+	if err := streamWriter.SetRow("A"+strconv.Itoa(*record), []interface{}{name, "计数"}); err != nil {
+		fmt.Printf("stream writer write failed: %v\n", err)
+		return
+	}
+
+	dname := dict.DictIndex_Name[dictIndex]
+	m.Range(func(key, value interface{}) bool {
+		v := value.(*LogIdInfo)
+		exist := v.IdFlag & (1 << global.IndexC1)
+		if exist != 0 {
+			*record++
+			tmp := []interface{}{
+				fmt.Sprintf("%s_%v", dname, key),
+				v.Cnt[global.IndexC1],
+			}
+			if strings.Contains(key.(string), "illegal:") {
+				*invalid++
+			}
+			_ = streamWriter.SetRow("A"+strconv.Itoa(*record), tmp)
+		}
+		return true
+	})
+	*record++
 	return
 }
 
@@ -308,20 +410,27 @@ func checkDict(ex *excelize.File, m *sync.Map, index int) (int, int) {
 		return 0, 0
 	}
 
+	cntIndex := global.IndexC0
+	if index == dict.IndexDictC9 {
+		cntIndex = global.IndexC1
+	}
+
 	record := 0
 	invalid := 0
 	m.Range(func(key, value interface{}) bool {
 		record++
 		v := value.(*LogIdInfo)
-		//取用识别话单中的文件类型数量为标准进行统计
-		tmp := []interface{}{
-			key,
-			v.Cnt[global.IndexC0],
+		exist := v.IdFlag & (1 << cntIndex)
+		if exist != 0 {
+			tmp := []interface{}{
+				key,
+				v.Cnt[cntIndex],
+			}
+			if strings.Contains(key.(string), "illegal:") {
+				invalid++
+			}
+			_ = streamWriter.SetRow("A"+strconv.Itoa(record+1), tmp)
 		}
-		if strings.Contains(key.(string), "illegal:") {
-			invalid++
-		}
-		_ = streamWriter.SetRow("A"+strconv.Itoa(record+1), tmp)
 		return true
 	})
 
@@ -330,25 +439,43 @@ func checkDict(ex *excelize.File, m *sync.Map, index int) (int, int) {
 
 func CheckDict(ex *excelize.File, index int) {
 	fmt.Printf("Check Item %03d [附录表校验]\n", index)
+	sheetName := "附录表校验"
+	_, err := ex.NewSheet(sheetName)
+	if err != nil {
+		fmt.Printf("new sheet failed:%v\n", err)
+		return
+	}
 
-	total, invalid := checkDict(ex, &AppProtoStat, dict.IndexDictC3)
-	printfItemResultCnt("应用层协议类型代码表C3", total, invalid)
+	streamWriter, err := ex.NewStreamWriter(sheetName)
+	if err != nil {
+		fmt.Printf("new stream writer failed: %v\n", err)
+		return
+	}
 
-	total, invalid = checkDict(ex, &BusProtoStat, dict.IndexDictC4)
-	printfItemResultCnt("业务层协议类型代码表C4", total, invalid)
+	err = streamWriter.SetColWidth(1, 2, 50)
+	if err != nil {
+		fmt.Printf("SetColWidth failed: %v\n", err)
+		return
+	}
 
-	total, invalid = checkDict(ex, &DataProtoStat, dict.IndexDictC9)
-	printfItemResultCnt("数据识别协议列表C9", total, invalid)
+	defer func() {
+		if err = streamWriter.Flush(); err != nil {
+			fmt.Printf("结束流式写入失败: %v\n", err)
+		}
+	}()
 
-	total, invalid = checkDict(ex, &FileTypeStat, dict.IndexDictC10)
-	printfItemResultCnt("数据识别文件格式类别C10", total, invalid)
+	total := 0
+	invalid := 0
+	writeRow(streamWriter, &AppProtoStat, dict.IndexDictC3, &total, &invalid)
+	writeRow(streamWriter, &BusProtoStat, dict.IndexDictC4, &total, &invalid)
+	writeRow1(streamWriter, &DataProtoStat, dict.IndexDictC9, &total, &invalid)
+	writeRow(streamWriter, &FileTypeStat, dict.IndexDictC10, &total, &invalid)
 
+	printfItemResultCnt(sheetName, total, invalid)
 	return
 }
 
-func CheckLogMap(ex *excelize.File, index int, name string, lmap map[string]CheckInfo) {
-	fmt.Printf("Check Item %03d [%s必填项校验]\n", index, name)
-
+func CheckLogMap(ex *excelize.File, name string, lmap map[string]CheckInfo) {
 	_, err := ex.NewSheet(name)
 	if err != nil {
 		fmt.Printf("new sheet failed:%v\n", err)
@@ -360,6 +487,12 @@ func CheckLogMap(ex *excelize.File, index int, name string, lmap map[string]Chec
 		fmt.Printf("new stream writer failed: %v\n", err)
 		return
 	}
+	err = streamWriter.SetColWidth(1, 3, 50)
+	if err != nil {
+		fmt.Printf("SetColWidth failed: %v\n", err)
+		return
+	}
+
 	defer func() {
 		if err = streamWriter.Flush(); err != nil {
 			fmt.Printf("结束流式写入失败: %v\n", err)
@@ -371,25 +504,27 @@ func CheckLogMap(ex *excelize.File, index int, name string, lmap map[string]Chec
 		return
 	}
 
-	total := 0
+	invalid := 0
 	for key, value := range lmap {
 		tmp := []interface{}{
 			key,
 			value.Reason,
 			value.Filenmae,
 		}
-		total++
-		_ = streamWriter.SetRow("A"+strconv.Itoa(total+1), tmp)
+		invalid++
+		_ = streamWriter.SetRow("A"+strconv.Itoa(invalid+1), tmp)
 	}
 
-	var res string
-	if total == 0 {
-		res = fmt.Sprintf("Pass")
-	} else {
-		res = fmt.Sprintf("invalid %d records", total)
-	}
-	printfItemResult(fmt.Sprintf("%s合法性校验", name), res, total)
+	printfItemResult1(name, invalid)
+	return
+}
 
+func CheckGLogMap(ex *excelize.File, index int) {
+	fmt.Printf("Check Item %03d [必填项校验]\n", index)
+	CheckLogMap(ex, global.LogName[global.IndexC0], LogCheckMap[global.IndexC0])
+	CheckLogMap(ex, global.LogName[global.IndexC1], LogCheckMap[global.IndexC1])
+	CheckLogMap(ex, global.LogName[global.IndexC4], LogCheckMap[global.IndexC4])
+	CheckLogMap(ex, global.LogName[global.IndexA8], LogCheckMap[global.IndexA8])
 	return
 }
 
@@ -484,6 +619,17 @@ func RecordSample(ex *excelize.File, index int) {
 		fmt.Printf("new stream writer failed: %v\n", err)
 		return
 	}
+	err = streamWriter.SetColWidth(1, 1, 50)
+	if err != nil {
+		fmt.Printf("SetColWidth failed: %v\n", err)
+		return
+	}
+	err = streamWriter.SetColWidth(9, 10, 30)
+	if err != nil {
+		fmt.Printf("SetColWidth failed: %v\n", err)
+		return
+	}
+
 	defer func() {
 		if err = streamWriter.Flush(); err != nil {
 			fmt.Printf("结束流式写入失败: %v\n", err)
@@ -506,7 +652,7 @@ func RecordSample(ex *excelize.File, index int) {
 	})
 
 	res := fmt.Sprintf("total %d records", record)
-	printfItemResult("样本扫描信息", res, 0)
+	printfItemResult("Sample Records", res, 0)
 
 	return
 }
@@ -661,6 +807,12 @@ func CheckRelation(ex *excelize.File, index int, name string) {
 		fmt.Printf("new stream writer failed: %v\n", err)
 		return
 	}
+	err = streamWriter.SetColWidth(1, 2, 50)
+	if err != nil {
+		fmt.Printf("SetColWidth failed: %v\n", err)
+		return
+	}
+
 	defer func() {
 		if err = streamWriter.Flush(); err != nil {
 			fmt.Printf("结束流式写入失败: %v\n", err)
@@ -682,22 +834,14 @@ func CheckRelation(ex *excelize.File, index int, name string) {
 		record++
 		md5 := key.(string)
 		info := value.(*SampleMapValue)
-
 		_checkAssetNum(info, streamWriter, md5, &invalid, &row)
 		_checkFileType(info, streamWriter, md5, &invalid, &row)
 		_checkFileSize(info, streamWriter, md5, &invalid, &row)
 		_checkRisk(info, streamWriter, md5, &invalid, &row)
-
 		return true
 	})
 
-	var res string
-	if invalid == 0 {
-		res = fmt.Sprintf("total %d records", record)
-	} else {
-		res = fmt.Sprintf("total %d recrods; invalid %d records", record, invalid)
-	}
-	printfItemResult("敏感信息数量/跨境校验", res, invalid)
+	printfItemResult1("AssetNum/FileType/FileSize/EventType", invalid)
 
 	return
 }
@@ -712,13 +856,7 @@ func GenerateResult(excel *excelize.File) {
 	checkNum++
 	CheckDict(excel, checkNum)
 	checkNum++
-	CheckLogMap(excel, checkNum, "C0识别话单", LogCheckMap[global.IndexC0])
-	checkNum++
-	CheckLogMap(excel, checkNum, "C1监测话单", LogCheckMap[global.IndexC1])
-	checkNum++
-	CheckLogMap(excel, checkNum, "C4关键字话单", LogCheckMap[global.IndexC4])
-	checkNum++
-	CheckLogMap(excel, checkNum, "A8审计话单", LogCheckMap[global.IndexA8])
+	CheckGLogMap(excel, checkNum)
 	checkNum++
 	RecordSample(excel, checkNum)
 	checkNum++
