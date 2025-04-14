@@ -14,13 +14,26 @@ var (
 	gPath string
 	oPath string
 	date  string
+	Ver   bool
+)
+
+var (
+	Version   string
+	BuildTime string
 )
 
 func main() {
 	flag.StringVar(&gPath, "s", "", "数安话单文件路径，各话单路径参考标准格式查找, 示例: /home/udpi_log")
 	flag.StringVar(&oPath, "o", "report.xlsx", "话单文件核查，生成报告文件名")
 	flag.StringVar(&date, "d", "", "指定时间日期，示例20061226")
+	flag.BoolVar(&Ver, "v", false, "查询版本信息")
 	flag.Parse()
+
+	if Ver {
+		fmt.Printf("Version   : %s\n", Version)
+		fmt.Printf("Build Time: %s\n", BuildTime)
+		return
+	}
 
 	if date != "" {
 		global.TimeStr = date

@@ -541,11 +541,13 @@ func fieldsLogid(key string, index int) (string, bool) {
 		return msg, false
 	}
 
-	devno := strings.TrimLeft(key[8:14], "0")
-	if devno != telnetcmd.Devinfo.Dev_No {
-		msg = fmt.Sprintf("设备编号校验失败: %s != %s", devno, telnetcmd.Devinfo.Dev_No)
-		return msg, false
-	}
+	/*
+		devno := strings.TrimLeft(key[8:14], "0")
+		if devno != telnetcmd.Devinfo.Dev_No {
+			msg = fmt.Sprintf("设备编号校验失败: %s != %s", devno, telnetcmd.Devinfo.Dev_No)
+			return msg, false
+		}
+	*/
 
 	LogidMapStoreInc(&LogidMap, key, index)
 
