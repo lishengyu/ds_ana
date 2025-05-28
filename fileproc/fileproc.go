@@ -611,8 +611,8 @@ func fieldsDeviceId(key string) (string, bool) {
 
 func fieldsFileName(key string) (string, bool) {
 	msg := ""
-	if key == "" || len(key) > 48 {
-		msg = "字段为空|字段长度大于48"
+	if key == "" || len(key) > 128 {
+		msg = "字段为空|字段长度大于128"
 		return msg, false
 	}
 	return msg, true
@@ -892,6 +892,19 @@ func procC1Fields(fs []string) (int, string, bool) {
 		return global.C1_GatherTime, msg, false
 	}
 
+	if msg, valid := fieldsNull(fs[global.C1_SrcCountry]); !valid {
+		return global.C1_SrcCountry, msg, false
+	}
+	if msg, valid := fieldsNull(fs[global.C1_SrcProvince]); !valid {
+		return global.C1_SrcProvince, msg, false
+	}
+	if msg, valid := fieldsNull(fs[global.C1_DstCountry]); !valid {
+		return global.C1_DstCountry, msg, false
+	}
+	if msg, valid := fieldsNull(fs[global.C1_DstCountry]); !valid {
+		return global.C1_DstCountry, msg, false
+	}
+
 	return 0, "", true
 }
 
@@ -963,6 +976,22 @@ func procC4Fields(fs []string) (int, string, bool) {
 
 	if msg, valid := fieldsNull(fs[global.C4_GatherTime]); !valid {
 		return global.C4_GatherTime, msg, false
+	}
+
+	if msg, valid := fieldsNull(fs[global.C4_SrcCountry]); !valid {
+		return global.C4_SrcCountry, msg, false
+	}
+
+	if msg, valid := fieldsNull(fs[global.C4_SrcProvince]); !valid {
+		return global.C4_SrcProvince, msg, false
+	}
+
+	if msg, valid := fieldsNull(fs[global.C4_DstCountry]); !valid {
+		return global.C4_DstCountry, msg, false
+	}
+
+	if msg, valid := fieldsNull(fs[global.C4_DstProvince]); !valid {
+		return global.C4_DstProvince, msg, false
 	}
 
 	return 0, "", true
@@ -1280,7 +1309,7 @@ func procC1Ctx(line, filename string) {
 	fs := strings.Split(line, "|")
 	fname := global.LogTypeIndex_Name[global.IndexC1]
 
-	if len(fs) != 21 {
+	if len(fs) != global.C1_Max {
 		info := CheckInfo{
 			Reason:   fmt.Sprintf("%s字段个数[%d]不符", fname, len(fs)),
 			Filenmae: filename,
@@ -1313,7 +1342,7 @@ func procC3Ctx(ctx, filename string) {
 func procC4Ctx(line, filename string) {
 	fs := strings.Split(line, "|")
 	fname := global.LogTypeIndex_Name[global.IndexC4]
-	if len(fs) != 20 {
+	if len(fs) != global.C4_Max {
 		info := CheckInfo{
 			Reason:   fmt.Sprintf("%s字段个数[%d]不符", fname, len(fs)),
 			Filenmae: filename,

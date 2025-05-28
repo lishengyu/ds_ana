@@ -167,6 +167,11 @@ const (
 	C1_DataType
 	C1_FileMD5
 	C1_GatherTime
+	C1_SrcCountry
+	C1_SrcProvince
+	C1_DstCountry
+	C1_DstProvince
+	C1_Max
 )
 
 var C1_Name = map[int]string{
@@ -215,6 +220,11 @@ const (
 	C4_AttachMent
 	C4_FileMD5
 	C4_GatherTime
+	C4_SrcCountry
+	C4_SrcProvince
+	C4_DstCountry
+	C4_DstProvince
+	C4_Max
 )
 
 var C4_Name = map[int]string{
