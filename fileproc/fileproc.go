@@ -628,6 +628,33 @@ func fieldsOperateType(key string) (string, bool) {
 	return msg, true
 }
 
+func fieldsA8LogType(key string) (string, bool) {
+	msg := ""
+	if key != "1" {
+		msg = "LogType字段值必须为1"
+		return msg, false
+	}
+
+	return msg, true
+}
+
+// 规范表C.14
+func fieldsA8FileType(key string) (string, bool) {
+	msg := ""
+	t, err := strconv.Atoi(key)
+	if err != nil {
+		msg = "字段非数值型字符"
+		return msg, false
+	}
+
+	if t < 1 || t > 67 {
+		msg = "字段范围不在[1-67]中"
+		return msg, false
+	}
+
+	return msg, true
+}
+
 func fieldsFileType(key string, index int) (string, bool) {
 	msg := ""
 	id, err := strconv.Atoi(key)
@@ -1024,8 +1051,22 @@ func procA8Fields(fs []string, index int) (int, string, bool) {
 		return global.A8_FileName, msg, false
 	}
 
+	if msg, valid := fieldsA8FileType(fs[global.A8_FileType]); !valid {
+		return global.A8_FileType, msg, false
+	}
+
 	if msg, valid := fieldsOperateType(fs[global.A8_OperateType]); !valid {
 		return global.A8_OperateType, msg, false
+	}
+
+	if msg, valid := fieldsNull(fs[global.A8_OperateTime]); !valid {
+		return global.A8_OperateTime, msg, false
+	}
+
+	if len(fs) == global.A8_Max {
+		if msg, valid := fieldsA8LogType(fs[global.A8_LogType]); !valid {
+			return global.A8_LogType, msg, false
+		}
 	}
 
 	return 0, "", true

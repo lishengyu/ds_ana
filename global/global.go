@@ -258,6 +258,7 @@ const (
 	A8_DeviceId
 	A8_IP
 	A8_FileName
+	A8_FileType
 	A8_OperateType
 	A8_OperateTime
 	A8_LogType
@@ -271,6 +272,7 @@ var A8_Name = map[int]string{
 	A8_DeviceId:    "DeviceId",
 	A8_IP:          "IP",
 	A8_FileName:    "FileName",
+	A8_FileType:    "FileType",
 	A8_OperateType: "OperateType",
 	A8_OperateTime: "OperateTime",
 	A8_LogType:     "LogType",
