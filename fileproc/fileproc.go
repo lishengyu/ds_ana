@@ -19,6 +19,7 @@ import (
 
 	"ds_ana/dict"
 	"ds_ana/global"
+	"ds_ana/logger"
 	"ds_ana/telnetcmd"
 
 	"github.com/xuri/excelize/v2"
@@ -91,8 +92,9 @@ var (
 	DataProtoStat sync.Map                    //数据识别协议类型
 	FileStat      [global.IndexMax]StFileStat //统计各类话单上报情况
 
-	LogCheckMap [global.IndexMax]map[string]CheckInfo //话单校验map表
-	SampleMap   sync.Map
+	LogCheckMap    [global.IndexMax]map[string]CheckInfo //话单校验map表
+	SampleMap      sync.Map
+	SampleMapMutex sync.Mutex
 )
 
 func incFileCnt(index int) {
@@ -135,7 +137,10 @@ func LogidMapStoreInc(m *sync.Map, id string, index int) {
 	}
 }
 
-func SampleMapUpdateC0(m *sync.Map, md5 string, info SampleC0Info) {
+func SampleMapUpdateC0(m *sync.Map, mu *sync.Mutex, md5 string, info SampleC0Info) {
+	mu.Lock()
+	defer mu.Unlock()
+
 	value, ok := m.Load(md5)
 	if ok {
 		sample := value.(*SampleMapValue)
@@ -148,7 +153,10 @@ func SampleMapUpdateC0(m *sync.Map, md5 string, info SampleC0Info) {
 	return
 }
 
-func SampleMapUpdateC1(m *sync.Map, md5 string, info SampleC1Info) {
+func SampleMapUpdateC1(m *sync.Map, mu *sync.Mutex, md5 string, info SampleC1Info) {
+	mu.Lock()
+	defer mu.Unlock()
+
 	value, ok := m.Load(md5)
 	if ok {
 		sample := value.(*SampleMapValue)
@@ -161,7 +169,10 @@ func SampleMapUpdateC1(m *sync.Map, md5 string, info SampleC1Info) {
 	return
 }
 
-func SampleMapUpdateC4(m *sync.Map, md5 string, info SampleC4Info) {
+func SampleMapUpdateC4(m *sync.Map, mu *sync.Mutex, md5 string, info SampleC4Info) {
+	mu.Lock()
+	defer mu.Unlock()
+
 	value, ok := m.Load(md5)
 	if ok {
 		sample := value.(*SampleMapValue)
@@ -1063,7 +1074,7 @@ func procA8Fields(fs []string, index int) (int, string, bool) {
 		return global.A8_OperateTime, msg, false
 	}
 
-	if len(fs) == global.A8_Max {
+	if !global.IsCtcc {
 		if msg, valid := fieldsA8LogType(fs[global.A8_LogType]); !valid {
 			return global.A8_LogType, msg, false
 		}
@@ -1109,7 +1120,7 @@ func recordC0Info(fs []string) {
 		FileSize:    fs[global.C0_AssetsSize],
 	}
 
-	SampleMapUpdateC0(&SampleMap, fs[global.C0_FileMD5+offset], info)
+	SampleMapUpdateC0(&SampleMap, &SampleMapMutex, fs[global.C0_FileMD5+offset], info)
 	return
 }
 
@@ -1130,7 +1141,7 @@ func recordC1Info(fs []string) {
 		DataNum:  num,
 	}
 
-	SampleMapUpdateC1(&SampleMap, fs[global.C1_FileMD5], info)
+	SampleMapUpdateC1(&SampleMap, &SampleMapMutex, fs[global.C1_FileMD5], info)
 	return
 }
 
@@ -1141,7 +1152,7 @@ func recordC4Info(fs []string) {
 		FileType: filetype,
 		FileSize: fs[global.C4_FileSize],
 	}
-	SampleMapUpdateC4(&SampleMap, fs[global.C4_FileMD5], info)
+	SampleMapUpdateC4(&SampleMap, &SampleMapMutex, fs[global.C4_FileMD5], info)
 }
 
 func recordLogInvalid(line string, info CheckInfo, index int) {
@@ -1249,9 +1260,12 @@ func checkLogFileName(fn string, logtype int) bool {
 			} else if logtype == global.IndexC4 && fs[i] != "0x06c4" {
 				invalid = true
 				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
-			} else if logtype == global.IndexA8 && fs[i] != "0x04a8" {
+			} else if logtype == global.IndexA8 && global.IsCtcc && fs[i] != "0x04a8" {
 				invalid = true
-				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
+				rea = fmt.Sprintf("ctcc %s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
+			} else if logtype == global.IndexA8 && !global.IsCtcc && fs[i] != "0x00a8" {
+				invalid = true
+				rea = fmt.Sprintf("cucc %s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
 			}
 		case global.FN_Filetype:
 			if fs[i] != "000" {
@@ -1409,7 +1423,15 @@ func procC4Ctx(line, filename string) {
 func procA8Ctx(line, filename string) {
 	fs := strings.Split(line, "|")
 	fname := global.LogTypeIndex_Name[global.IndexA8]
-	if len(fs) != 9 && len(fs) != 10 {
+	if global.IsCtcc && len(fs) != 9 {
+		info := CheckInfo{
+			Reason:   fmt.Sprintf("%s字段个数[%d]不符", fname, len(fs)),
+			Filenmae: filename,
+		}
+		recordLogInvalid(line, info, global.IndexA8)
+		return
+	} else if !global.IsCtcc && len(fs) != 10 {
+		fname = "00a8"
 		info := CheckInfo{
 			Reason:   fmt.Sprintf("%s字段个数[%d]不符", fname, len(fs)),
 			Filenmae: filename,
@@ -1582,10 +1604,15 @@ func ProcEvidencePath(dir string, wg *sync.WaitGroup) error {
 }
 
 func getPathByParam(lpath, logpath, date string) string {
+	var str string
 	if date == "" {
-		return filepath.Join(lpath, logpath)
+		str = filepath.Join(lpath, logpath)
+	} else {
+		str = filepath.Join(lpath, logpath, date, "success")
 	}
-	return filepath.Join(lpath, logpath, date, "success")
+
+	logger.Logger.Printf("walk path :%s", str)
+	return str
 }
 
 func AnalyzeLogFile(gptah, date, opath string) {

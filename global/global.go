@@ -292,6 +292,7 @@ var (
 var (
 	TimeStr    string
 	Manufactor string
+	IsCtcc     bool
 )
 
 func PathExists(path string) bool {

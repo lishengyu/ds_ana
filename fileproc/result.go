@@ -524,7 +524,12 @@ func CheckGLogMap(ex *excelize.File, index int) {
 	CheckLogMap(ex, global.LogName[global.IndexC0], LogCheckMap[global.IndexC0])
 	CheckLogMap(ex, global.LogName[global.IndexC1], LogCheckMap[global.IndexC1])
 	CheckLogMap(ex, global.LogName[global.IndexC4], LogCheckMap[global.IndexC4])
-	CheckLogMap(ex, global.LogName[global.IndexA8], LogCheckMap[global.IndexA8])
+	if global.IsCtcc {
+		CheckLogMap(ex, global.LogName[global.IndexA8], LogCheckMap[global.IndexA8])
+	} else {
+		CheckLogMap(ex, "00a8", LogCheckMap[global.IndexA8])
+	}
+
 	return
 }
 
