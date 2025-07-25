@@ -673,7 +673,7 @@ func _checkAssetNum(info *SampleMapValue, streamWriter *excelize.StreamWriter, m
 		a[sum]++
 	}
 
-	if len(a) != 1 {
+	if len(a) > 1 {
 		tmp := []interface{}{
 			md5,
 			"06c0话单中敏感信息数量不一致",
@@ -686,7 +686,7 @@ func _checkAssetNum(info *SampleMapValue, streamWriter *excelize.StreamWriter, m
 			a[v.DataNum]++
 		}
 
-		if len(a) != 1 {
+		if len(a) > 1 {
 			tmp := []interface{}{
 				md5,
 				"06c0/06c1话单中敏感信息数量不一致",
