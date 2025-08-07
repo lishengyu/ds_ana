@@ -194,6 +194,31 @@ func fieldsNull(key string) (string, bool) {
 	return msg, true
 }
 
+func fieldsRuleId(id, desc string) (string, bool) {
+	value, ok := dict.C13_DESC_DICT[id]
+	if !ok {
+		return "规则ID不存在", false
+	}
+
+	if value != desc {
+		return "规则描述与ID不匹配", false
+	}
+
+	return "", true
+}
+
+func fieldsRuleIdMatch(id string, datacodes []dict.DataCode) (string, bool) {
+	idInt, _ := strconv.Atoi(id)
+
+	for _, v := range datacodes {
+		if v.Rule == idInt {
+			return "", true
+		}
+	}
+
+	return fmt.Sprintf("RuleId字段 %s 不在DataInfoNum组别中，请核查", id), false
+}
+
 func fieldsCmdId(key string) (string, bool) {
 	msg := ""
 	if key == "" || len(key) > 13 {
@@ -376,46 +401,55 @@ func fieldsUpload(key string) (string, bool) {
 	return msg, true
 }
 
-func fieldsDataInfoDict(fs []string, sum *int) (bool, int, string) {
+func extractDataCode(fs []string) (dict.DataCode, bool, int, string) {
+	var datacode dict.DataCode
 	id, err := strconv.Atoi(fs[0])
 	if err != nil || (id != 1 && id != 2) {
-		return false, 0, "DataType非数值,或者值非1|2"
+		return datacode, false, 0, "DataType非数值,或者值非1|2"
 	}
 
 	subid, err := strconv.Atoi(fs[1])
 	if err != nil || subid < 1 || subid > 6 {
-		return false, 1, "DataLevel非数值，或者值不在[1-6]范围内"
+		return datacode, false, 1, "DataLevel非数值，或者值不在[1-6]范围内"
 	}
 
 	list := strings.Split(fs[2], ",")
 	if len(list) != 2 {
-		return false, 2, "DataContent字段格式有误"
+		return datacode, false, 2, "DataContent字段格式有误"
 	}
 
 	codeid, err := strconv.Atoi(list[0])
 	if err != nil {
-		return false, 2, "DataContent不在代码表中"
+		return datacode, false, 2, "DataContent不在代码表中"
 	}
 
 	hit, err := strconv.Atoi(list[1])
 	if err != nil || hit == 0 {
-		return false, 2, "DataContent字段hit非数值，或者hit次数为0"
+		return datacode, false, 2, "DataContent字段hit非数值，或者hit次数为0"
 	}
 
-	*sum += hit
-
-	datacode := dict.DataCode{
+	datacode = dict.DataCode{
 		Class: id,
 		Level: subid,
 		Rule:  codeid,
+		Hit:   hit,
 	}
 
+	return datacode, true, 0, ""
+}
+
+func fieldsDataInfoDict(datacode dict.DataCode, sum *int) (bool, string) {
+	// 先求和
+	*sum += datacode.Hit
+
+	// 再重置查表，dict表中hit字段为0
+	datacode.Hit = 0
 	_, ok := dict.C11_12_13_DICT[datacode]
 	if !ok {
-		return false, 0, "DataType/DataLevel/DataContent字段不在规范表中"
+		return false, "DataType/DataLevel/DataContent字段不在规范表中"
 	}
 
-	return true, 0, ""
+	return true, ""
 }
 
 func fieldsDataInfo(key string, index int) bool {
@@ -757,11 +791,9 @@ func procC0Fields(fs []string) (int, string, bool) {
 	}
 
 	//后面可以尝试和分级分类一起进行校验
-	if msg, valid := fieldsNull(fs[global.C0_RuleID]); !valid {
+	// ruleId ruleDesc
+	if msg, valid := fieldsRuleId(fs[global.C0_RuleID], fs[global.C0_Rule_Desc]); !valid {
 		return global.C0_RuleID, msg, false
-	}
-	if msg, valid := fieldsNull(fs[global.C0_Rule_Desc]); !valid {
-		return global.C0_Rule_Desc, msg, false
 	}
 
 	if msg, valid := fieldsIp(fs[global.C0_AssetsIP]); !valid {
@@ -786,15 +818,27 @@ func procC0Fields(fs []string) (int, string, bool) {
 		offset = (datainfoGroup - 1) * 3
 	}
 
-	if offset+global.C0_Max != len(fs) {
-		return global.C0_DataInfoNum, "字段数量和分级分类组数不一致", false
+	// 取DataCodeGroup
+	var datacodeGroup []dict.DataCode
+	for i := 0; i < datainfoGroup; i++ {
+		if datacode, valid, ret, msg := extractDataCode(fs[global.C0_DataType+3*i : global.C0_DataType+3*i+3]); !valid {
+			return global.C0_DataType + 3*i + ret, msg, false
+		} else {
+			datacodeGroup = append(datacodeGroup, datacode)
+		}
 	}
 
+	// 校验DataCode
 	hitsum := 0
-	for i := 0; i < datainfoGroup; i++ {
-		if valid, ret, msg := fieldsDataInfoDict(fs[global.C0_DataType+3*i:global.C0_DataType+3*i+3], &hitsum); !valid {
-			return global.C0_DataType + 3*i + ret, msg, false
+	for _, datacode := range datacodeGroup {
+		if valid, msg := fieldsDataInfoDict(datacode, &hitsum); !valid {
+			return global.C0_DataType, msg, false
 		}
+	}
+
+	// 校验ruleId，在前面的基础上，再进一步校验
+	if msg, valid := fieldsRuleIdMatch(fs[global.C0_RuleID], datacodeGroup); !valid {
+		return global.C0_RuleID, msg, false
 	}
 
 	//字段顺序在前面
