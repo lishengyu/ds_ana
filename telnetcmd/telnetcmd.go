@@ -47,13 +47,14 @@ func ParseOutput(out string) error {
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "dev_ip:") {
-			Devinfo.Dev_IP = strings.TrimPrefix(line, "dev_ip:")
+			Devinfo.Dev_IP = strings.TrimSpace(strings.TrimPrefix(line, "dev_ip:"))
 		} else if strings.HasPrefix(line, "dev_no:") {
-			Devinfo.Dev_No = strings.TrimPrefix(line, "dev_no:")
+			no := strings.TrimSpace(strings.TrimPrefix(line, "dev_no:"))
+			Devinfo.Dev_No = strings.TrimLeft(no, "0") // 剔除前面可能存在的0
 		} else if strings.HasPrefix(line, "site_name:") {
-			Devinfo.Dev_Site = strings.TrimPrefix(line, "site_name:")
+			Devinfo.Dev_Site = strings.TrimSpace(strings.TrimPrefix(line, "site_name:"))
 		} else if strings.HasPrefix(line, "house_id:") {
-			Devinfo.Dev_HouseId = strings.TrimPrefix(line, "house_id:")
+			Devinfo.Dev_HouseId = strings.TrimSpace(strings.TrimPrefix(line, "house_id:"))
 		}
 	}
 

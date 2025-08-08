@@ -586,13 +586,18 @@ func fieldsLogid(key string, index int) (string, bool) {
 		return msg, false
 	}
 
-	/*
-		devno := strings.TrimLeft(key[8:14], "0")
-		if devno != telnetcmd.Devinfo.Dev_No {
-			msg = fmt.Sprintf("设备编号校验失败: %s != %s", devno, telnetcmd.Devinfo.Dev_No)
-			return msg, false
-		}
-	*/
+	var devno string
+	if index == global.IndexA8 {
+		// 审计日志生成的logid和其他日志的方式不同，需要单独处理
+		devno = strings.TrimLeft(key[14:20], "0")
+	} else {
+		devno = strings.TrimLeft(key[8:14], "0")
+	}
+
+	if devno != telnetcmd.Devinfo.Dev_No {
+		msg = fmt.Sprintf("设备编号校验失败: %s != %s", devno, telnetcmd.Devinfo.Dev_No)
+		return msg, false
+	}
 
 	LogidMapStoreInc(&LogidMap, key, index)
 
@@ -1245,9 +1250,10 @@ func checkSampleFileName(fn string) bool {
 				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN1_Fields_Name[i], i+1, fs[i])
 			}
 		case global.FN1_Devno:
-			if fs[i] != telnetcmd.Devinfo.Dev_No {
+			no := strings.TrimLeft(fs[i], "0")
+			if no != telnetcmd.Devinfo.Dev_No {
 				invalid = true
-				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN1_Fields_Name[i], i+1, fs[i])
+				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN1_Fields_Name[i], i+1, no)
 			}
 		case global.FN1_MD5:
 			str := strings.TrimSuffix(fs[i], ".zip")
@@ -1327,9 +1333,10 @@ func checkLogFileName(fn string, logtype int) bool {
 				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
 			}
 		case global.FN_Devno:
-			if fs[i] != telnetcmd.Devinfo.Dev_No {
+			no := strings.TrimLeft(fs[i], "0")
+			if no != telnetcmd.Devinfo.Dev_No {
 				invalid = true
-				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
+				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, no)
 			}
 		case global.FN_Date:
 			str := strings.TrimSuffix(fs[i], ".tar.gz")

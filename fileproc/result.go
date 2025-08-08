@@ -523,6 +523,7 @@ func CheckGLogMap(ex *excelize.File, index int) {
 	fmt.Printf("Check Item %03d [必填项校验]\n", index)
 	CheckLogMap(ex, global.LogName[global.IndexC0], LogCheckMap[global.IndexC0])
 	CheckLogMap(ex, global.LogName[global.IndexC1], LogCheckMap[global.IndexC1])
+	CheckLogMap(ex, global.LogName[global.IndexC3], LogCheckMap[global.IndexC3])
 	CheckLogMap(ex, global.LogName[global.IndexC4], LogCheckMap[global.IndexC4])
 	if global.IsCtcc {
 		CheckLogMap(ex, global.LogName[global.IndexA8], LogCheckMap[global.IndexA8])
