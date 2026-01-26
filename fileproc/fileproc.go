@@ -581,7 +581,7 @@ func fieldsLogid(key string, index int) (string, bool) {
 		return msg, false
 	}
 
-	if !strings.HasPrefix(key, global.TimeStr) {
+	if !global.IsDateInRange(key) {
 		msg = "日期校验失败"
 		return msg, false
 	}
@@ -1344,7 +1344,7 @@ func checkLogFileName(fn string, logtype int) bool {
 				invalid = true
 				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
 			}
-			if str[:8] != global.TimeStr {
+			if !global.IsDateInRange(str[:8]) {
 				invalid = true
 				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
 			}
@@ -1666,37 +1666,45 @@ func getPathByParam(lpath, logpath, date string) string {
 	return str
 }
 
-func AnalyzeLogFile(gptah, date, opath string) {
+func AnalyzeLogFile(gptah string, dateList []string, opath string) {
 	cur := time.Now()
 	var wg sync.WaitGroup
 
-	//获取取证文件MD5值
-	wg.Add(1)
-	c3 := getPathByParam(gptah, global.EvidenceName, date)
-	go ProcEvidencePath(c3, &wg)
-
-	//处理识别话单
-	wg.Add(1)
-	c0 := getPathByParam(gptah, global.IdentifyName, date)
-	go ProcLogPath(c0, &wg, global.IndexC0)
-
-	//处理监测话单
-	wg.Add(1)
-	c1 := getPathByParam(gptah, global.MonitorName, date)
-	go ProcLogPath(c1, &wg, global.IndexC1)
-
-	//处理关键字话单
-	wg.Add(1)
-	c4 := getPathByParam(gptah, global.KeywordName, date)
-	if exist := global.PathExists(c4); !exist {
-		c4 = getPathByParam(gptah, global.KeywordNameB, date)
+	// 如果没有指定日期列表，使用默认的当前日期
+	if len(dateList) == 0 {
+		dateList = []string{global.TimeStr}
 	}
-	go ProcLogPath(c4, &wg, global.IndexC4)
 
-	//处理审计日志
-	wg.Add(1)
-	a8 := getPathByParam(gptah, global.AuditNam, date)
-	go ProcLogPath(a8, &wg, global.IndexA8)
+	// 为每个日期创建处理任务
+	for _, date := range dateList {
+		//获取取证文件MD5值
+		wg.Add(1)
+		c3 := getPathByParam(gptah, global.EvidenceName, date)
+		go ProcEvidencePath(c3, &wg)
+
+		//处理识别话单
+		wg.Add(1)
+		c0 := getPathByParam(gptah, global.IdentifyName, date)
+		go ProcLogPath(c0, &wg, global.IndexC0)
+
+		//处理监测话单
+		wg.Add(1)
+		c1 := getPathByParam(gptah, global.MonitorName, date)
+		go ProcLogPath(c1, &wg, global.IndexC1)
+
+		//处理关键字话单
+		wg.Add(1)
+		c4 := getPathByParam(gptah, global.KeywordName, date)
+		if exist := global.PathExists(c4); !exist {
+			c4 = getPathByParam(gptah, global.KeywordNameB, date)
+		}
+		go ProcLogPath(c4, &wg, global.IndexC4)
+
+		//处理审计日志
+		wg.Add(1)
+		a8 := getPathByParam(gptah, global.AuditNam, date)
+		go ProcLogPath(a8, &wg, global.IndexA8)
+	}
 
 	wg.Wait()
 

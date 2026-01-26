@@ -291,6 +291,7 @@ var (
 
 var (
 	TimeStr    string
+	TimeList   []string
 	Manufactor string
 	IsCtcc     bool
 )
@@ -320,6 +321,97 @@ func PrintReportSuffix(ctx string) {
 
 func init() {
 	TimeStr = time.Now().Format("20060102")
+}
+
+// ParseTimeRange 解析时间范围，支持单日、多日范围和逗号分隔
+func ParseTimeRange(timeStr string) ([]string, error) {
+	if timeStr == "" {
+		return []string{}, nil
+	}
+
+	// 检查是否包含逗号分隔
+	if strings.Contains(timeStr, ",") {
+		dates := strings.Split(timeStr, ",")
+		var result []string
+		for _, date := range dates {
+			date = strings.TrimSpace(date)
+			if len(date) == 8 {
+				result = append(result, date)
+			} else if strings.Contains(date, "-") {
+				// 处理日期范围
+				rangeDates, err := parseDateRange(date)
+				if err != nil {
+					return nil, err
+				}
+				result = append(result, rangeDates...)
+			}
+		}
+		return result, nil
+	}
+
+	// 检查是否包含日期范围
+	if strings.Contains(timeStr, "-") {
+		return parseDateRange(timeStr)
+	}
+
+	// 单日情况
+	if len(timeStr) == 8 {
+		return []string{timeStr}, nil
+	}
+
+	return nil, fmt.Errorf("无效的日期格式: %s", timeStr)
+}
+
+// parseDateRange 解析日期范围
+func parseDateRange(dateRange string) ([]string, error) {
+	parts := strings.Split(dateRange, "-")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("无效的日期范围格式: %s", dateRange)
+	}
+
+	startDate := strings.TrimSpace(parts[0])
+	endDate := strings.TrimSpace(parts[1])
+
+	if len(startDate) != 8 || len(endDate) != 8 {
+		return nil, fmt.Errorf("日期格式必须为8位数字: %s", dateRange)
+	}
+
+	startTime, err := time.Parse("20060102", startDate)
+	if err != nil {
+		return nil, fmt.Errorf("无效的开始日期: %s", startDate)
+	}
+
+	endTime, err := time.Parse("20060102", endDate)
+	if err != nil {
+		return nil, fmt.Errorf("无效的结束日期: %s", endDate)
+	}
+
+	if startTime.After(endTime) {
+		return nil, fmt.Errorf("开始日期不能晚于结束日期: %s", dateRange)
+	}
+
+	var dates []string
+	for d := startTime; !d.After(endTime); d = d.AddDate(0, 0, 1) {
+		dates = append(dates, d.Format("20060102"))
+	}
+
+	return dates, nil
+}
+
+// IsDateInRange 检查日期是否在指定的时间范围内
+func IsDateInRange(dateStr string) bool {
+	if len(TimeList) == 0 {
+		// 如果没有设置时间范围，使用默认的单日匹配
+		return strings.HasPrefix(dateStr, TimeStr)
+	}
+
+	for _, validDate := range TimeList {
+		if strings.HasPrefix(dateStr, validDate) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func GrepFile(filename, str string) (string, error) {

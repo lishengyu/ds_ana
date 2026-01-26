@@ -52,7 +52,7 @@ func setLogLevel(Detail, Verbose bool) {
 func argsCheck() {
 	flag.StringVar(&gPath, "s", "", "数安话单文件路径，各话单路径参考标准格式查找, 示例: /home/udpi_log")
 	flag.StringVar(&oPath, "o", "report.xlsx", "话单文件核查，生成报告文件名")
-	flag.StringVar(&date, "d", "", "指定时间日期，示例20061226")
+	flag.StringVar(&date, "d", "", "指定时间日期，支持多天匹配，格式：20061226-20061228,20061229")
 	flag.BoolVar(&Ver, "v", false, "查询版本信息")
 	flag.BoolVar(&Verbose, "info", false, "verbose")
 	flag.BoolVar(&DetailVerbose, "debug", false, "detail verbose")
@@ -60,13 +60,20 @@ func argsCheck() {
 	flag.Parse()
 
 	if Ver {
-		fmt.Printf("Version   : %s\n", Version)
-		fmt.Printf("Build Time: %s\n", BuildTime)
+		fmt.Printf("ds_ana version %s\n", Version)
+		fmt.Printf("Built: %s\n", BuildTime)
 		os.Exit(0)
 	}
 
 	if date != "" {
 		global.TimeStr = date
+		// 解析多天匹配
+		timeList, err := global.ParseTimeRange(date)
+		if err != nil {
+			fmt.Printf("日期参数解析错误: %v\n", err)
+			os.Exit(-1)
+		}
+		global.TimeList = timeList
 	}
 
 	if gPath == "" {
@@ -138,6 +145,6 @@ func main() {
 	}
 
 	fmt.Printf("开始解析日志话单文件 ...\n")
-	fileproc.AnalyzeLogFile(gPath, date, oPath)
+	fileproc.AnalyzeLogFile(gPath, global.TimeList, oPath)
 	return
 }
