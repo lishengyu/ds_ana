@@ -8,6 +8,9 @@ go build -o ds_ana main.go
 
 # Release
 
+## Version v1.2.6
+    1. 增加对多日期匹配的支持，格式：20061226-20061228,20061229
+
 ## Version v1.2.5
     1. 识别日志中对RuleId/RuleDesc/DataCodeGroup做关联性校验；
     2. 添加06c3日志记录错误信息；
