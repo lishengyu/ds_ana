@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bufio"
 	"compress/gzip"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"io/fs"
@@ -54,6 +55,7 @@ type SampleC0Info struct {
 }
 
 type SampleC1Info struct {
+	Md5      string
 	Event    dict.RiskCode
 	L7Proto  int
 	FileType int
@@ -95,6 +97,9 @@ var (
 	LogCheckMap    [global.IndexMax]map[string]CheckInfo //话单校验map表
 	SampleMap      sync.Map
 	SampleMapMutex sync.Mutex
+
+	UrlMap      sync.Map // 按照url进行统计，样本输出的风险类型有哪些
+	UrlMapMutex sync.Mutex
 )
 
 func incFileCnt(index int) {
@@ -150,7 +155,6 @@ func SampleMapUpdateC0(m *sync.Map, mu *sync.Mutex, md5 string, info SampleC0Inf
 		sample.C0Info = append(sample.C0Info, info)
 		m.Store(md5, sample)
 	}
-	return
 }
 
 func SampleMapUpdateC1(m *sync.Map, mu *sync.Mutex, md5 string, info SampleC1Info) {
@@ -166,7 +170,6 @@ func SampleMapUpdateC1(m *sync.Map, mu *sync.Mutex, md5 string, info SampleC1Inf
 		sample.C1Info = append(sample.C1Info, info)
 		m.Store(md5, sample)
 	}
-	return
 }
 
 func SampleMapUpdateC4(m *sync.Map, mu *sync.Mutex, md5 string, info SampleC4Info) {
@@ -182,7 +185,33 @@ func SampleMapUpdateC4(m *sync.Map, mu *sync.Mutex, md5 string, info SampleC4Inf
 		sample.C4Info = append(sample.C4Info, info)
 		m.Store(md5, sample)
 	}
-	return
+}
+
+func UrlMapUpdateC1(m *sync.Map, mu *sync.Mutex, url string, info SampleC1Info) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	plainUrl, err := base64.StdEncoding.DecodeString(url)
+	if err != nil {
+		fmt.Printf("base64 decode url %s error: %v\n", url, err)
+		return
+	}
+
+	value, ok := m.Load(string(plainUrl))
+	if ok {
+		sample := value.(*SampleMapValue)
+		// check info exist or not
+		for _, v := range sample.C1Info {
+			if v.Md5 == info.Md5 && v.Event == info.Event {
+				return
+			}
+		}
+		sample.C1Info = append(sample.C1Info, info)
+	} else {
+		sample := &SampleMapValue{}
+		sample.C1Info = append(sample.C1Info, info)
+		m.Store(string(plainUrl), sample)
+	}
 }
 
 func fieldsNull(key string) (string, bool) {
@@ -1170,7 +1199,6 @@ func recordC0Info(fs []string) {
 	}
 
 	SampleMapUpdateC0(&SampleMap, &SampleMapMutex, fs[global.C0_FileMD5+offset], info)
-	return
 }
 
 func recordC1Info(fs []string) {
@@ -1183,6 +1211,7 @@ func recordC1Info(fs []string) {
 	event.RiskSubType, _ = strconv.Atoi(fs[global.C1_EventSubType])
 
 	info := SampleC1Info{
+		Md5:      fs[global.C1_FileMD5],
 		Event:    event,
 		L7Proto:  l7Proto,
 		FileType: fileType,
@@ -1191,7 +1220,9 @@ func recordC1Info(fs []string) {
 	}
 
 	SampleMapUpdateC1(&SampleMap, &SampleMapMutex, fs[global.C1_FileMD5], info)
-	return
+	if l7Proto == global.C9_ProtoHTTP && fs[global.C1_Url] != "" {
+		UrlMapUpdateC1(&UrlMap, &UrlMapMutex, fs[global.C1_Url], info)
+	}
 }
 
 func recordC4Info(fs []string) {
@@ -1408,7 +1439,6 @@ func procC0Ctx(line, filename string) {
 		}
 		recordLogInvalid(line, info, global.IndexC0)
 	}
-	return
 }
 
 func procC1Ctx(line, filename string) {
@@ -1434,7 +1464,6 @@ func procC1Ctx(line, filename string) {
 		}
 		recordLogInvalid(line, info, global.IndexC1)
 	}
-	return
 }
 
 func procC2Ctx(ctx, filename string) {
@@ -1500,7 +1529,6 @@ func procA8Ctx(line, filename string) {
 		}
 		recordLogInvalid(line, info, global.IndexA8)
 	}
-	return
 }
 
 func procLogData(ctx string, logType int, filename string) error {
@@ -1727,7 +1755,6 @@ func AnalyzeLogFile(gptah string, dateList []string, opath string) {
 	}
 
 	fmt.Printf("Check Complete, elapse %.2f 秒\n", time.Since(cur).Seconds())
-	return
 }
 
 func init() {

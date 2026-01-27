@@ -146,5 +146,4 @@ func main() {
 
 	fmt.Printf("开始解析日志话单文件 ...\n")
 	fileproc.AnalyzeLogFile(gPath, global.TimeList, oPath)
-	return
 }

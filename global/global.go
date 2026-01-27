@@ -198,6 +198,10 @@ var C1_Name = map[int]string{
 	C1_GatherTime:   "GatherTime",
 }
 
+const (
+	C9_ProtoHTTP = 1
+)
+
 // C4字段索引
 const (
 	C4_CommandId = iota

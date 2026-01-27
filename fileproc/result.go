@@ -551,6 +551,20 @@ func genExlTitle() []interface{} {
 	return title
 }
 
+func genRiskTitle() []interface{} {
+	title := []interface{}{
+		"URL",
+		"MD5",
+		"文件类型",
+		"文件大小(KB)",
+		"L7Proto",
+		"风险类型数量",
+		"监测风险",
+	}
+
+	return title
+}
+
 func genExlLine(key, value any) []interface{} {
 	md5 := key.(string)
 	info := value.(*SampleMapValue)
@@ -609,6 +623,45 @@ func genExlLine(key, value any) []interface{} {
 	}
 
 	return tmp
+}
+
+func genRiskLine(url, md5 string, info *SampleMapValue, isFirst bool) []interface{} {
+
+	var risk []string
+	var l7Proto string
+	var fileType string
+	var fileSize string
+	for _, v := range info.C1Info {
+		if md5 != v.Md5 {
+			continue
+		}
+		risk = append(risk, fmt.Sprintf("%d|%d", v.Event.RiskType, v.Event.RiskSubType))
+		l7Proto = dict.C9_DICT[v.L7Proto]
+		fileType = dict.C10_DICT[v.FileType]
+		fileSize = v.FileSize
+	}
+
+	if isFirst {
+		return []interface{}{
+			url,
+			md5,
+			fileType,
+			fileSize,
+			l7Proto,
+			len(risk),
+			strings.Join(risk, ","),
+		}
+	}
+
+	return []interface{}{
+		"",
+		md5,
+		fileType,
+		fileSize,
+		l7Proto,
+		len(risk),
+		strings.Join(risk, ","),
+	}
 }
 
 func RecordSample(ex *excelize.File, index int) {
@@ -848,8 +901,67 @@ func CheckRelation(ex *excelize.File, index int, name string) {
 	})
 
 	printfItemResult1("AssetNum/FileType/FileSize/EventType", invalid)
+}
 
-	return
+func CheckUrlRisk(ex *excelize.File, index int, name string) {
+	fmt.Printf("Check Item %03d %s\n", index, name)
+
+	_, err := ex.NewSheet(name)
+	if err != nil {
+		fmt.Printf("new sheet failed:%v\n", err)
+		return
+	}
+
+	streamWriter, err := ex.NewStreamWriter(name)
+	if err != nil {
+		fmt.Printf("new stream writer failed: %v\n", err)
+		return
+	}
+	err = streamWriter.SetColWidth(1, 2, 50)
+	if err != nil {
+		fmt.Printf("SetColWidth failed: %v\n", err)
+		return
+	}
+
+	defer func() {
+		if err = streamWriter.Flush(); err != nil {
+			fmt.Printf("结束流式写入失败: %v\n", err)
+		}
+	}()
+
+	if err := streamWriter.SetRow("A1", genRiskTitle()); err != nil {
+		fmt.Printf("stream writer write failed: %v\n", err)
+		return
+	}
+
+	record := 0
+	urlNum := 0
+	UrlMap.Range(func(key, value interface{}) bool {
+		urlNum++
+		url := key.(string)
+		info := value.(*SampleMapValue)
+		//按照MD5分类统计
+		md5s := make(map[string]bool)
+
+		for _, v := range info.C1Info {
+			md5s[v.Md5] = true
+		}
+
+		isFirst := true
+		for md5, v := range md5s {
+			if v {
+				line := genRiskLine(url, md5, info, isFirst)
+				_ = streamWriter.SetRow("A"+strconv.Itoa(record+1), line)
+				record++
+				isFirst = false
+			}
+		}
+
+		return true
+	})
+
+	res := fmt.Sprintf("URL风险统计共%d条, 共%d条样本", urlNum, record)
+	printfItemResult("Url Risk", res, 0)
 }
 
 func GenerateResult(excel *excelize.File) {
@@ -867,6 +979,6 @@ func GenerateResult(excel *excelize.File) {
 	RecordSample(excel, checkNum)
 	checkNum++
 	CheckRelation(excel, checkNum, "话单关联")
-
-	return
+	checkNum++
+	CheckUrlRisk(excel, checkNum, "URL风险")
 }
