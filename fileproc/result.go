@@ -472,7 +472,6 @@ func CheckDict(ex *excelize.File, index int) {
 	writeRow(streamWriter, &FileTypeStat, dict.IndexDictC10, &total, &invalid)
 
 	printfItemResultCnt(sheetName, total, invalid)
-	return
 }
 
 func CheckLogMap(ex *excelize.File, name string, lmap map[string]CheckInfo) {
@@ -516,7 +515,6 @@ func CheckLogMap(ex *excelize.File, name string, lmap map[string]CheckInfo) {
 	}
 
 	printfItemResult1(name, invalid)
-	return
 }
 
 func CheckGLogMap(ex *excelize.File, index int) {
@@ -530,8 +528,6 @@ func CheckGLogMap(ex *excelize.File, index int) {
 	} else {
 		CheckLogMap(ex, "00a8", LogCheckMap[global.IndexA8])
 	}
-
-	return
 }
 
 func genExlTitle() []interface{} {
@@ -964,6 +960,84 @@ func CheckUrlRisk(ex *excelize.File, index int, name string) {
 	printfItemResult("Url Risk", res, 0)
 }
 
+func CheckAuditLog(ex *excelize.File, index int, name string) {
+	fmt.Printf("Check Item %03d %s\n", index, name)
+
+	_, err := ex.NewSheet(name)
+	if err != nil {
+		fmt.Printf("new sheet failed:%v\n", err)
+		return
+	}
+
+	streamWriter, err := ex.NewStreamWriter(name)
+	if err != nil {
+		fmt.Printf("new stream writer failed: %v\n", err)
+		return
+	}
+	err = streamWriter.SetColWidth(1, 2, 50)
+	if err != nil {
+		fmt.Printf("SetColWidth failed: %v\n", err)
+		return
+	}
+
+	defer func() {
+		if err = streamWriter.Flush(); err != nil {
+			fmt.Printf("结束流式写入失败: %v\n", err)
+		}
+	}()
+
+	if err := streamWriter.SetRow("A1", []interface{}{"文件名", "Reason"}); err != nil {
+		fmt.Printf("stream writer write failed: %v\n", err)
+		return
+	}
+
+	record := 0
+	for filename, count := range FileNameMap {
+		_, ok := FileNameAuditMap[filename]
+		if !ok {
+			line := []interface{}{
+				filename,
+				"日志文件缺失审计话单",
+			}
+			_ = streamWriter.SetRow("A"+strconv.Itoa(record+1), line)
+			record++
+		}
+
+		if int(count) > len(global.TimeList) {
+			line := []interface{}{
+				filename,
+				fmt.Sprintf("日志文件数量异常: %d", count),
+			}
+			_ = streamWriter.SetRow("A"+strconv.Itoa(record+1), line)
+			record++
+		}
+	}
+
+	for filename, count := range FileNameAuditMap {
+		fileNum, ok := FileNameMap[filename]
+		if !ok {
+			line := []interface{}{
+				filename,
+				"审计话单缺失日志文件",
+			}
+			_ = streamWriter.SetRow("A"+strconv.Itoa(record+1), line)
+			record++
+		}
+
+		if count != fileNum*2 {
+			line := []interface{}{
+				filename,
+				fmt.Sprintf("日志文件数量：%d,审计日志数量: %d, 不匹配", fileNum, count),
+			}
+			_ = streamWriter.SetRow("A"+strconv.Itoa(record+1), line)
+			record++
+		}
+	}
+
+	res := fmt.Sprintf("审计记录: %d, 日志文件: %d, 异常记录: %d\n", len(FileNameAuditMap), len(FileNameMap), record)
+	printfItemResult("Audit Log", res, record)
+}
+
 func GenerateResult(excel *excelize.File) {
 	checkNum := 1
 	CheckMd5(excel, checkNum)
@@ -975,6 +1049,8 @@ func GenerateResult(excel *excelize.File) {
 	CheckDict(excel, checkNum)
 	checkNum++
 	CheckGLogMap(excel, checkNum)
+	checkNum++
+	CheckAuditLog(excel, checkNum, "审计文件")
 	checkNum++
 	RecordSample(excel, checkNum)
 	checkNum++

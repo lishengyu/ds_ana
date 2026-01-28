@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"time"
 
 	"ds_ana/fileproc"
 	"ds_ana/global"
@@ -66,7 +67,6 @@ func argsCheck() {
 	}
 
 	if date != "" {
-		global.TimeStr = date
 		// 解析多天匹配
 		timeList, err := global.ParseTimeRange(date)
 		if err != nil {
@@ -74,6 +74,8 @@ func argsCheck() {
 			os.Exit(-1)
 		}
 		global.TimeList = timeList
+	} else {
+		global.TimeList = []string{time.Now().Format("20060102")}
 	}
 
 	if gPath == "" {

@@ -15,6 +15,7 @@ const (
 	KeywordName  = "ds_keyword_file"
 	KeywordNameB = "ds_data_keyword"
 	AuditNam     = "ds_audit_log"
+	IdentifyRule = "ds_data_identify_rules"
 )
 
 const (
@@ -294,7 +295,6 @@ var (
 )
 
 var (
-	TimeStr    string
 	TimeList   []string
 	Manufactor string
 	IsCtcc     bool
@@ -321,10 +321,6 @@ func PrintReportSuffix(ctx string) {
 	fmt.Printf("----------------\n")
 	fmt.Printf("%s\n", ctx)
 	fmt.Printf("======================================\n")
-}
-
-func init() {
-	TimeStr = time.Now().Format("20060102")
 }
 
 // ParseTimeRange 解析时间范围，支持单日、多日范围和逗号分隔
@@ -404,10 +400,6 @@ func parseDateRange(dateRange string) ([]string, error) {
 
 // IsDateInRange 检查日期是否在指定的时间范围内
 func IsDateInRange(dateStr string) bool {
-	if len(TimeList) == 0 {
-		// 如果没有设置时间范围，使用默认的单日匹配
-		return strings.HasPrefix(dateStr, TimeStr)
-	}
 
 	for _, validDate := range TimeList {
 		if strings.HasPrefix(dateStr, validDate) {

@@ -100,6 +100,12 @@ var (
 
 	UrlMap      sync.Map // 按照url进行统计，样本输出的风险类型有哪些
 	UrlMapMutex sync.Mutex
+
+	FileNameMap      map[string]uint8 // 按照文件名进行统计，确认有哪些文件需要生成审计日志
+	FileNameMapMutex sync.Mutex
+
+	FileNameAuditMap      map[string]uint8 // 按照文件名进行统计，确认有哪些文件的审计日志生成
+	FileNameAuditMapMutex sync.Mutex
 )
 
 func incFileCnt(index int) {
@@ -124,6 +130,32 @@ func incLogNullCnt(index int) {
 
 func incLogInvalidCnt(index int) {
 	atomic.AddInt64(&FileStat[index].LogNum.InvalidCnt, 1)
+}
+
+func FileNameMapStoreInc(fn string) {
+	FileNameMapMutex.Lock()
+	defer FileNameMapMutex.Unlock()
+
+	count, ok := FileNameMap[fn]
+	if ok {
+		count++
+	} else {
+		count = 1
+	}
+	FileNameMap[fn] = count
+}
+
+func FileNameAuditMapStoreInc(fn string) {
+	FileNameAuditMapMutex.Lock()
+	defer FileNameAuditMapMutex.Unlock()
+
+	count, ok := FileNameAuditMap[fn]
+	if ok {
+		count++
+	} else {
+		count = 1
+	}
+	FileNameAuditMap[fn] = count
 }
 
 func LogidMapStoreInc(m *sync.Map, id string, index int) {
@@ -1138,6 +1170,8 @@ func procA8Fields(fs []string, index int) (int, string, bool) {
 
 	if msg, valid := fieldsFileName(fs[global.A8_FileName]); !valid {
 		return global.A8_FileName, msg, false
+	} else {
+		FileNameAuditMapStoreInc(filepath.Base(fs[global.A8_FileName]))
 	}
 
 	if msg, valid := fieldsA8FileType(fs[global.A8_FileType]); !valid {
@@ -1338,6 +1372,9 @@ func checkLogFileName(fn string, logtype int) bool {
 			} else if logtype == global.IndexC1 && fs[i] != "0x06c1" {
 				invalid = true
 				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
+			} else if logtype == global.IndexC2 && fs[i] != "0x06c2" {
+				invalid = true
+				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
 			} else if logtype == global.IndexC4 && fs[i] != "0x06c4" {
 				invalid = true
 				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
@@ -1467,7 +1504,7 @@ func procC1Ctx(line, filename string) {
 }
 
 func procC2Ctx(ctx, filename string) {
-
+	FileNameMapStoreInc(filepath.Base(filename))
 }
 
 func procC3Ctx(ctx, filename string) {
@@ -1497,7 +1534,6 @@ func procC4Ctx(line, filename string) {
 		}
 		recordLogInvalid(line, info, global.IndexC4)
 	}
-	return
 }
 
 func procA8Ctx(line, filename string) {
@@ -1633,6 +1669,7 @@ func ProcLogPath(path string, wg *sync.WaitGroup, logType int) error {
 				}
 				incFileCnt(logType)
 				procTargzFile(dir, logType)
+				FileNameMapStoreInc(filepath.Base(d.Name()))
 			}
 		}
 
@@ -1664,6 +1701,7 @@ func ProcEvidencePath(dir string, wg *sync.WaitGroup) error {
 
 		if !d.IsDir() {
 			if strings.HasSuffix(d.Name(), "zip") {
+				FileNameMapStoreInc(filepath.Base(d.Name()))
 				if valid := checkSampleFileName(d.Name()); !valid {
 					incFileErrCnt(global.IndexC3)
 				} else {
@@ -1698,11 +1736,6 @@ func AnalyzeLogFile(gptah string, dateList []string, opath string) {
 	cur := time.Now()
 	var wg sync.WaitGroup
 
-	// 如果没有指定日期列表，使用默认的当前日期
-	if len(dateList) == 0 {
-		dateList = []string{global.TimeStr}
-	}
-
 	// 为每个日期创建处理任务
 	for _, date := range dateList {
 		//获取取证文件MD5值
@@ -1732,6 +1765,11 @@ func AnalyzeLogFile(gptah string, dateList []string, opath string) {
 		wg.Add(1)
 		a8 := getPathByParam(gptah, global.AuditNam, date)
 		go ProcLogPath(a8, &wg, global.IndexA8)
+
+		// 处理识别规则文件
+		wg.Add(1)
+		c2 := getPathByParam(gptah, global.IdentifyRule, date)
+		go ProcLogPath(c2, &wg, global.IndexC2)
 	}
 
 	wg.Wait()
@@ -1761,4 +1799,7 @@ func init() {
 	for i := 0; i < global.IndexMax; i++ {
 		LogCheckMap[i] = make(map[string]CheckInfo)
 	}
+
+	FileNameMap = make(map[string]uint8)
+	FileNameAuditMap = make(map[string]uint8)
 }
