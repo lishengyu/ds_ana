@@ -20,6 +20,7 @@ var (
 	oPath         string
 	date          string
 	Ver           bool
+	Bak           bool
 	Verbose       bool
 	DetailVerbose bool
 	Port          int
@@ -55,6 +56,7 @@ func argsCheck() {
 	flag.StringVar(&oPath, "o", "report.xlsx", "话单文件核查，生成报告文件名")
 	flag.StringVar(&date, "d", "", "指定时间日期，支持多天匹配，格式：20061226-20061228,20061229")
 	flag.BoolVar(&Ver, "v", false, "查询版本信息")
+	flag.BoolVar(&Bak, "b", false, "核查路径是否备份路径(默认:false,路径组成不同)")
 	flag.BoolVar(&Verbose, "info", false, "verbose")
 	flag.BoolVar(&DetailVerbose, "debug", false, "detail verbose")
 	//flag.IntVar(&Port, "p", 36500, "指定Dpi命令行端口号")
@@ -147,5 +149,5 @@ func main() {
 	}
 
 	fmt.Printf("开始解析日志话单文件 ...\n")
-	fileproc.AnalyzeLogFile(gPath, global.TimeList, oPath)
+	fileproc.AnalyzeLogFile(gPath, global.TimeList, oPath, Bak)
 }

@@ -14,7 +14,7 @@ const (
 	EvidenceName = "ds_evidence_file"
 	KeywordName  = "ds_keyword_file"
 	KeywordNameB = "ds_data_keyword"
-	AuditNam     = "ds_audit_log"
+	AuditName    = "ds_audit_log"
 	IdentifyRule = "ds_data_identify_rules"
 )
 
