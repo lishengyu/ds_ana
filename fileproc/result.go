@@ -4,34 +4,79 @@ import (
 	"ds_ana/dict"
 	"ds_ana/global"
 	"fmt"
+	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/fatih/color"
 	"github.com/xuri/excelize/v2"
 )
 
+// IsTerminalColorSupported 检查终端是否支持颜色显示
+func IsTerminalColorSupported() bool {
+	// 检查是否是Windows系统
+	if runtime.GOOS == "windows" {
+		// Windows系统通常支持颜色
+		return true
+	}
+
+	// 检查是否是Linux/Unix系统并检查TERM环境变量
+	term := os.Getenv("TERM")
+	if term == "" {
+		// 没有TERM环境变量，可能是非交互式终端
+		return false
+	}
+
+	// 检查TERM环境变量是否支持颜色
+	colorTerms := []string{
+		"xterm", "xterm-256color", "xterm-color", "screen", "screen-256color",
+		"linux", "cygwin", "rxvt", "rxvt-unicode", "vt100", "vt220",
+	}
+
+	for _, colorTerm := range colorTerms {
+		if strings.Contains(term, colorTerm) {
+			return true
+		}
+	}
+
+	// 检查COLORTERM环境变量
+	if os.Getenv("COLORTERM") != "" {
+		return true
+	}
+
+	// 检查是否是TTY终端
+	fileInfo, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+
+	// 如果是字符设备（终端）且不是管道重定向
+	return (fileInfo.Mode() & os.ModeCharDevice) != 0
+}
+
 func printfItemResult(item, res string, succ int) {
 	if succ == 0 {
-		fmt.Printf("\t[PASS] %s:\t%s\n", item, res)
+		color.New(color.FgGreen, color.Bold).Println("\t[PASS] " + item + ":\t" + res)
 	} else {
-		fmt.Printf("\t[FAIL] %s:\t%s\n", item, res)
+		color.New(color.FgRed, color.Bold, color.Underline).Println("\t[FAIL] " + item + ":\t" + res)
 	}
 }
 
 func printfItemResult1(item string, fail int) {
 	if fail == 0 {
-		fmt.Printf("\t[PASS] %s\tsucc\n", item)
+		color.New(color.FgGreen, color.Bold).Println("\t[PASS] " + item + "\tsucc")
 	} else {
-		fmt.Printf("\t[FAIL] %s\t%d records\n", item, fail)
+		color.New(color.FgRed, color.Bold, color.Underline).Println("\t[FAIL] " + item + "\t" + strconv.Itoa(fail) + " records")
 	}
 }
 
 func printfItemResultCnt(item string, all, fail int) {
 	if fail == 0 {
-		fmt.Printf("\t[PASS] %s:\t%d records\n", item, all)
+		color.New(color.FgGreen, color.Bold).Println("\t[PASS] " + item + ":\t" + strconv.Itoa(all) + " records")
 	} else {
-		fmt.Printf("\t[FAIL] %s:\tsucc:%d records\tfail:%d records\n", item, all, fail)
+		color.New(color.FgRed, color.Bold, color.Underline).Println("\t[FAIL] " + item + ":\tsucc:" + strconv.Itoa(all) + " records\tfail:" + strconv.Itoa(fail) + " records")
 	}
 }
 
@@ -181,8 +226,6 @@ func CheckMd5(ex *excelize.File, index int) {
 		res = fmt.Sprintf("total %d recrods; invalid %d records", record, invalid)
 	}
 	printfItemResult("06c3", res, invalid)
-
-	return
 }
 
 func CheckLogCnt(ex *excelize.File, index int) {
@@ -324,8 +367,6 @@ func CheckGLogId(ex *excelize.File, index int) {
 
 	record, invalid := CheckLogId(ex, "Logid校验", &LogidMap)
 	printfItemResultCnt("Logid校验", record, invalid)
-
-	return
 }
 
 func writeRow(streamWriter *excelize.StreamWriter, m *sync.Map, dictIndex int, record, invalid *int) {
@@ -946,9 +987,9 @@ func CheckUrlRisk(ex *excelize.File, index int, name string) {
 		isFirst := true
 		for md5, v := range md5s {
 			if v {
+				record++
 				line := genRiskLine(url, md5, info, isFirst)
 				_ = streamWriter.SetRow("A"+strconv.Itoa(record+1), line)
-				record++
 				isFirst = false
 			}
 		}
@@ -997,19 +1038,19 @@ func CheckAuditLog(ex *excelize.File, index int, name string) {
 		if !ok {
 			line := []interface{}{
 				filename,
-				"日志文件缺失审计话单",
+				"原始日志文件已存在，未找到关联审计记录",
 			}
-			_ = streamWriter.SetRow("A"+strconv.Itoa(record+1), line)
 			record++
-		}
-
-		if int(count) > len(global.TimeList) {
-			line := []interface{}{
-				filename,
-				fmt.Sprintf("日志文件数量异常: %d", count),
+			_ = streamWriter.SetRow("A"+strconv.Itoa(record+1), line)
+		} else {
+			if int(count) > len(global.TimeList) {
+				line := []interface{}{
+					filename,
+					fmt.Sprintf("日志文件数量异常: %d", count),
+				}
+				record++
+				_ = streamWriter.SetRow("A"+strconv.Itoa(record+1), line)
 			}
-			_ = streamWriter.SetRow("A"+strconv.Itoa(record+1), line)
-			record++
 		}
 	}
 
@@ -1018,19 +1059,19 @@ func CheckAuditLog(ex *excelize.File, index int, name string) {
 		if !ok {
 			line := []interface{}{
 				filename,
-				"审计话单缺失日志文件",
+				"审计记录已存在，未找到关联原始日志文件",
 			}
-			_ = streamWriter.SetRow("A"+strconv.Itoa(record+1), line)
 			record++
-		}
-
-		if count != fileNum*2 {
-			line := []interface{}{
-				filename,
-				fmt.Sprintf("日志文件数量：%d,审计日志数量: %d, 不匹配", fileNum, count),
+			_ = streamWriter.SetRow("A"+strconv.Itoa(record+1), line)
+		} else {
+			if count != fileNum*2 {
+				line := []interface{}{
+					filename,
+					fmt.Sprintf("日志文件数量：%d,审计日志数量: %d, 不匹配", fileNum, count),
+				}
+				record++
+				_ = streamWriter.SetRow("A"+strconv.Itoa(record+1), line)
 			}
-			_ = streamWriter.SetRow("A"+strconv.Itoa(record+1), line)
-			record++
 		}
 	}
 

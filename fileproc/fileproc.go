@@ -700,14 +700,14 @@ func fieldsPort(key string) (string, bool) {
 	return msg, true
 }
 
-func fieldsMd5(key string, logType int) (string, bool) {
+func fieldsMd5(cmdId, key string, logType int) (string, bool) {
 	msg := ""
 	if key == "" || len(key) != 32 {
 		msg = "字段为空|字段长度不等于32"
 		return msg, false
 	}
 	md5 := strings.ToUpper(key)
-	Md5Map[logType].Store(md5, 1)
+	Md5Map[logType].Store(cmdId+"_"+md5, 1)
 	return msg, true
 }
 
@@ -916,7 +916,7 @@ func procC0Fields(fs []string) (int, string, bool) {
 		return global.C0_IsUploadFile, msg, false
 	}
 
-	if msg, valid := fieldsMd5(fs[global.C0_FileMD5+offset], global.IndexC0); !valid {
+	if msg, valid := fieldsMd5(fs[global.C0_CommandID], fs[global.C0_FileMD5+offset], global.IndexC0); !valid {
 		return global.C0_FileMD5, msg, false
 	}
 
@@ -1032,7 +1032,7 @@ func procC1Fields(fs []string) (int, string, bool) {
 		return global.C1_DataType, msg, false
 	}
 
-	if msg, valid := fieldsMd5(fs[global.C1_FileMD5], global.IndexC1); !valid {
+	if msg, valid := fieldsMd5(fs[global.C1_CommandId], fs[global.C1_FileMD5], global.IndexC1); !valid {
 		return global.C1_FileMD5, msg, false
 	}
 
@@ -1118,7 +1118,7 @@ func procC4Fields(fs []string) (int, string, bool) {
 		return global.C4_AttachMent, msg, false
 	}
 
-	if msg, valid := fieldsMd5(fs[global.C4_FileMD5], global.IndexC4); !valid {
+	if msg, valid := fieldsMd5(fs[global.C4_CommandId], fs[global.C4_FileMD5], global.IndexC4); !valid {
 		return global.C4_FileMD5, msg, false
 	}
 
@@ -1326,6 +1326,7 @@ func checkSampleFileName(fn string) bool {
 				invalid = true
 				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN1_Fields_Name[i], i+1, fs[i])
 			} else {
+				str = fmt.Sprintf("%s_%s", fs[global.FN1_CommandId], str)
 				Md5Map[global.IndexC3].Store(str, 1)
 			}
 		}
@@ -1685,6 +1686,11 @@ func ProcLogPath(path string, wg *sync.WaitGroup, logType int) error {
 
 func ProcEvidencePath(dir string, wg *sync.WaitGroup) error {
 	defer wg.Done()
+
+	if exist := global.PathExists(dir); !exist {
+		fmt.Printf("Path %s not exist, skip it!\n", dir)
+		return nil
+	}
 
 	deep1 := strings.Count(dir, string(os.PathSeparator))
 	err := filepath.WalkDir(dir, func(dir string, d fs.DirEntry, err error) error {
