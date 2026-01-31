@@ -1738,44 +1738,52 @@ func getPathByParam(lpath, logpath, date string, bak bool) string {
 	return str
 }
 
+func startAnalyzeTask(wg *sync.WaitGroup, gptah string, date string, bak bool) {
+	//获取取证文件MD5值
+	wg.Add(1)
+	c3 := getPathByParam(gptah, global.EvidenceName, date, bak)
+	go ProcEvidencePath(c3, wg)
+
+	//处理识别话单
+	wg.Add(1)
+	c0 := getPathByParam(gptah, global.IdentifyName, date, bak)
+	go ProcLogPath(c0, wg, global.IndexC0)
+
+	//处理监测话单
+	wg.Add(1)
+	c1 := getPathByParam(gptah, global.MonitorName, date, bak)
+	go ProcLogPath(c1, wg, global.IndexC1)
+
+	//处理关键字话单
+	wg.Add(1)
+	c4 := getPathByParam(gptah, global.KeywordName, date, bak)
+	if exist := global.PathExists(c4); !exist {
+		c4 = getPathByParam(gptah, global.KeywordNameB, date, bak)
+	}
+	go ProcLogPath(c4, wg, global.IndexC4)
+
+	//处理审计日志
+	wg.Add(1)
+	a8 := getPathByParam(gptah, global.AuditName, date, bak)
+	go ProcLogPath(a8, wg, global.IndexA8)
+
+	// 处理识别规则文件
+	wg.Add(1)
+	c2 := getPathByParam(gptah, global.IdentifyRule, date, bak)
+	go ProcLogPath(c2, wg, global.IndexC2)
+}
+
 func AnalyzeLogFile(gptah string, dateList []string, opath string, bak bool) {
 	cur := time.Now()
 	var wg sync.WaitGroup
 
-	// 为每个日期创建处理任务
-	for _, date := range dateList {
-		//获取取证文件MD5值
-		wg.Add(1)
-		c3 := getPathByParam(gptah, global.EvidenceName, date, bak)
-		go ProcEvidencePath(c3, &wg)
-
-		//处理识别话单
-		wg.Add(1)
-		c0 := getPathByParam(gptah, global.IdentifyName, date, bak)
-		go ProcLogPath(c0, &wg, global.IndexC0)
-
-		//处理监测话单
-		wg.Add(1)
-		c1 := getPathByParam(gptah, global.MonitorName, date, bak)
-		go ProcLogPath(c1, &wg, global.IndexC1)
-
-		//处理关键字话单
-		wg.Add(1)
-		c4 := getPathByParam(gptah, global.KeywordName, date, bak)
-		if exist := global.PathExists(c4); !exist {
-			c4 = getPathByParam(gptah, global.KeywordNameB, date, bak)
+	if bak {
+		for _, date := range dateList {
+			// 为每个日期创建处理任务
+			startAnalyzeTask(&wg, gptah, date, bak)
 		}
-		go ProcLogPath(c4, &wg, global.IndexC4)
-
-		//处理审计日志
-		wg.Add(1)
-		a8 := getPathByParam(gptah, global.AuditName, date, bak)
-		go ProcLogPath(a8, &wg, global.IndexA8)
-
-		// 处理识别规则文件
-		wg.Add(1)
-		c2 := getPathByParam(gptah, global.IdentifyRule, date, bak)
-		go ProcLogPath(c2, &wg, global.IndexC2)
+	} else {
+		startAnalyzeTask(&wg, gptah, "", bak)
 	}
 
 	wg.Wait()
