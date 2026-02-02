@@ -56,6 +56,8 @@ const (
 	FN_Devno
 	FN_Date
 	FN_Max
+	FN_C2_Max
+	FN_END = 7
 )
 
 var FN_Fields_Name = map[int]string{
@@ -66,6 +68,7 @@ var FN_Fields_Name = map[int]string{
 	FN_Manu:     "上报厂家名",
 	FN_Devno:    "上报设备编号",
 	FN_Date:     "上报日期",
+	FN_END:      "结束标志",
 }
 
 const (
@@ -299,6 +302,13 @@ var (
 	Manufactor string
 	IsCtcc     bool
 )
+
+func GetFileNameFieldsNum(logType int) int {
+	if logType == IndexC2 {
+		return FN_C2_Max
+	}
+	return FN_Max
+}
 
 func PathExists(path string) bool {
 	_, err := os.Stat(path)

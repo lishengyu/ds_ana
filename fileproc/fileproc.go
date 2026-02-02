@@ -1348,8 +1348,9 @@ func checkLogFileName(fn string, logtype int) bool {
 	fs := strings.Split(filepath.Base(fn), "+")
 
 	fname := global.LogTypeIndex_Name[logtype]
+	expectFiledsNum := global.GetFileNameFieldsNum(logtype)
 
-	if len(fs) != global.FN_Max {
+	if len(fs) != expectFiledsNum {
 		info := CheckInfo{
 			Reason:   fmt.Sprintf("%s文件名字段个数[%d]不符", fname, len(fs)),
 			Filenmae: fn,
@@ -1357,7 +1358,7 @@ func checkLogFileName(fn string, logtype int) bool {
 		recordLogInvalid(fn, info, global.IndexC0)
 		return false
 	}
-	for i := 0; i < global.FN_Max; i++ {
+	for i := 0; i < expectFiledsNum; i++ {
 		var rea string
 		invalid := false
 		switch i {
@@ -1414,6 +1415,12 @@ func checkLogFileName(fn string, logtype int) bool {
 				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
 			}
 			if !global.IsDateInRange(str[:8]) {
+				invalid = true
+				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
+			}
+		case global.FN_END:
+			str := strings.TrimSuffix(fs[i], ".tar.gz")
+			if str != "0" {
 				invalid = true
 				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN_Fields_Name[i], i+1, fs[i])
 			}
