@@ -693,7 +693,7 @@ func fieldsPort(key string) (string, bool) {
 		return msg, false
 	}
 
-	if p < 1 || p > 65534 {
+	if p < 1 || p > 65535 {
 		msg = "端口范围有误"
 		return msg, false
 	}
