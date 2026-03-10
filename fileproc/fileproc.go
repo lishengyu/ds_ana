@@ -94,7 +94,9 @@ var (
 	DataProtoStat sync.Map                    //数据识别协议类型
 	FileStat      [global.IndexMax]StFileStat //统计各类话单上报情况
 
-	LogCheckMap    [global.IndexMax]map[string]CheckInfo //话单校验map表
+	LogCheckMap      [global.IndexMax]map[string]CheckInfo //话单校验map表
+	LogCheckMapMutex sync.Mutex
+
 	SampleMap      sync.Map
 	SampleMapMutex sync.Mutex
 
@@ -1270,6 +1272,9 @@ func recordC4Info(fs []string) {
 }
 
 func recordLogInvalid(line string, info CheckInfo, index int) {
+	LogCheckMapMutex.Lock()
+	defer LogCheckMapMutex.Unlock()
+
 	LogCheckMap[index][line] = info
 	incLogInvalidCnt(index)
 }
