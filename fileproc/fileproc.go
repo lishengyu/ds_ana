@@ -1682,7 +1682,10 @@ func ProcLogPath(path string, wg *sync.WaitGroup, logType int) error {
 				}
 				incFileCnt(logType)
 				procTargzFile(dir, logType)
-				FileNameMapStoreInc(filepath.Base(d.Name()))
+				// 审计文件本身不需要生成审计日志
+				if logType != global.IndexA8 {
+					FileNameMapStoreInc(filepath.Base(d.Name()))
+				}
 			}
 		}
 
