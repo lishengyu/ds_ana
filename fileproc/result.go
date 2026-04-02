@@ -792,13 +792,17 @@ func _checkAssetNum(info *SampleMapValue, streamWriter *excelize.StreamWriter, m
 func _checkFileType(info *SampleMapValue, streamWriter *excelize.StreamWriter, md5 string, invalid *int, row *int) {
 	//文件大小
 	a := make(map[int]int)
+	var fileType int
 	for _, v := range info.C0Info {
+		fileType = v.FileType
 		a[v.FileType]++
 	}
 	for _, v := range info.C1Info {
+		fileType = v.FileType
 		a[v.FileType]++
 	}
 	for _, v := range info.C4Info {
+		fileType = v.FileType
 		a[v.FileType]++
 	}
 
@@ -806,6 +810,29 @@ func _checkFileType(info *SampleMapValue, streamWriter *excelize.StreamWriter, m
 		tmp := []interface{}{
 			md5,
 			"06c0/06c1/06c4话单中文件类型不一致",
+		}
+		*invalid++
+		*row++
+		_ = streamWriter.SetRow("A"+strconv.Itoa(*row+1), tmp)
+		return
+	}
+
+	value, ok := ZipFileSuffixMap.Load(md5)
+	if ok {
+		suffix := value.(string)
+		if !checkC10Map(fileType, suffix) {
+			tmp := []interface{}{
+				md5,
+				"06c0/06c1/06c4话单中MD5对应的取证文件后缀不一致",
+			}
+			*invalid++
+			*row++
+			_ = streamWriter.SetRow("A"+strconv.Itoa(*row+1), tmp)
+		}
+	} else {
+		tmp := []interface{}{
+			md5,
+			"06c0/06c1/06c4话单中MD5没有取到对应的取证文件后缀",
 		}
 		*invalid++
 		*row++

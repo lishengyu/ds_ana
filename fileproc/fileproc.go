@@ -2,6 +2,7 @@ package fileproc
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bufio"
 	"compress/gzip"
 	"encoding/base64"
@@ -108,7 +109,76 @@ var (
 
 	FileNameAuditMap      map[string]uint8 // 按照文件名进行统计，确认有哪些文件的审计日志生成
 	FileNameAuditMapMutex sync.Mutex
+
+	ZipFileSuffixMap      sync.Map // 按照zip文件名进行统计，确认有哪些文件的后缀名
+	ZipFileSuffixMapMutex sync.Mutex
 )
+
+func procZipFile(filename string) string {
+	// 打开zip文件
+	reader, err := zip.OpenReader(filename)
+	if err != nil {
+		logger.Logger.Printf("打开zip文件失败: %s, 错误: %v", filename, err)
+		return ""
+	}
+	defer reader.Close()
+
+	// 检查zip文件中是否只有一个文件
+	if len(reader.File) != 1 {
+		logger.Logger.Printf("zip文件 %s 中包含 %d 个文件，期望只有1个文件", filename, len(reader.File))
+		return ""
+	}
+
+	// 获取第一个（也是唯一一个）文件
+	file := reader.File[0]
+
+	// 提取文件后缀名
+	if strings.HasSuffix(file.Name, "tar.gz") {
+		return "tar.gz"
+	}
+
+	ext := filepath.Ext(file.Name)
+	if ext == "" {
+		logger.Logger.Printf("zip文件 %s 中的文件 %s 没有后缀名", filename, file.Name)
+		return ""
+	}
+
+	// 去掉点号，只保留后缀名
+	ext = strings.TrimPrefix(ext, ".")
+
+	//logger.Logger.Printf("从zip文件 %s 中提取到文件后缀名: %s", filename, ext)
+	return ext
+}
+
+func checkC10Map(fileType int, suffix string) bool {
+	if suffix == "" {
+		return false
+	}
+
+	value, ok := dict.C10_DICT[fileType]
+	if !ok {
+		return false
+	}
+
+	if strings.Contains(value, "其他") {
+		// 其他类不校验，直接返回true
+		return true
+	}
+
+	if !strings.Contains(value, "/") {
+		return value == suffix
+	} else {
+		if strings.Contains(value, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+func checkFileTypeAndSuffix(fileType int, zipFile string) bool {
+	suffix := procZipFile(zipFile)
+	return checkC10Map(fileType, suffix)
+}
 
 func incFileCnt(index int) {
 	atomic.AddInt64(&FileStat[index].FileNum, 1)
@@ -1279,7 +1349,7 @@ func recordLogInvalid(line string, info CheckInfo, index int) {
 	incLogInvalidCnt(index)
 }
 
-func checkSampleFileName(fn string) bool {
+func checkSampleFileName(fullName, fn string) bool {
 	fs := strings.Split(filepath.Base(fn), "+")
 
 	fname := global.LogTypeIndex_Name[global.IndexC3]
@@ -1331,6 +1401,16 @@ func checkSampleFileName(fn string) bool {
 				invalid = true
 				rea = fmt.Sprintf("%s文件名字段[%s][%d]错误: %s", fname, global.FN1_Fields_Name[i], i+1, fs[i])
 			} else {
+				// md5+suffix存表
+				suffix := procZipFile(fullName)
+				value, ok := ZipFileSuffixMap.LoadOrStore(str, suffix)
+				if ok {
+					if value.(string) != suffix {
+						invalid = true
+						rea = fmt.Sprintf("%s文件后缀不一致: %s != %s", fname, value.(string), suffix)
+					}
+				}
+
 				str = fmt.Sprintf("%s_%s", fs[global.FN1_CommandId], str)
 				Md5Map[global.IndexC3].Store(str, 1)
 			}
@@ -1521,7 +1601,6 @@ func procC2Ctx(ctx, filename string) {
 }
 
 func procC3Ctx(ctx, filename string) {
-
 }
 
 func procC4Ctx(line, filename string) {
@@ -1723,7 +1802,7 @@ func ProcEvidencePath(dir string, wg *sync.WaitGroup) error {
 		if !d.IsDir() {
 			if strings.HasSuffix(d.Name(), "zip") {
 				FileNameMapStoreInc(filepath.Base(d.Name()))
-				if valid := checkSampleFileName(d.Name()); !valid {
+				if valid := checkSampleFileName(dir, d.Name()); !valid {
 					incFileErrCnt(global.IndexC3)
 				} else {
 					incFileCnt(global.IndexC3)
