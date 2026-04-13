@@ -18,8 +18,10 @@ const (
 	IdentifyRule = "ds_data_identify_rules"
 )
 
+type LogType int
+
 const (
-	IndexC0 = iota
+	IndexC0 LogType = iota
 	IndexC1
 	IndexC2
 	IndexC3
@@ -29,7 +31,7 @@ const (
 )
 
 var (
-	LogTypeIndex_Name = map[int]string{
+	LogTypeIndex_Name = map[LogType]string{
 		IndexC0: "06c0",
 		IndexC1: "06c1",
 		IndexC2: "06c2",
@@ -37,7 +39,7 @@ var (
 		IndexC4: "06c4",
 		IndexA8: "04a8",
 	}
-	LogTypeName_Index = map[string]int{
+	LogTypeName_Index = map[string]LogType{
 		"06c0": IndexC0,
 		"06c1": IndexC1,
 		"06c2": IndexC2,
@@ -47,8 +49,10 @@ var (
 	}
 )
 
+type FileNameIndex int
+
 const (
-	FN_Version = iota
+	FN_Version FileNameIndex = iota
 	FN_Module
 	FN_Filetype
 	FN_Site
@@ -60,7 +64,7 @@ const (
 	FN_END = 7
 )
 
-var FN_Fields_Name = map[int]string{
+var FN_Fields_Name = map[FileNameIndex]string{
 	FN_Version:  "Version",
 	FN_Module:   "模块名称",
 	FN_Filetype: "文件类型",
@@ -72,7 +76,7 @@ var FN_Fields_Name = map[int]string{
 }
 
 const (
-	FN1_Version = iota
+	FN1_Version FileNameIndex = iota
 	FN1_Module
 	FN1_CommandId
 	FN1_Site
@@ -82,7 +86,7 @@ const (
 	FN1_Max
 )
 
-var FN1_Fields_Name = map[int]string{
+var FN1_Fields_Name = map[FileNameIndex]string{
 	FN1_Version:   "Version",
 	FN1_Module:    "模块名称",
 	FN1_CommandId: "采集指令Id",
@@ -92,9 +96,11 @@ var FN1_Fields_Name = map[int]string{
 	FN1_MD5:       "文件MD5",
 }
 
+type LogFieldsIndex int
+
 // C0字段索引
 const (
-	C0_LogID = iota
+	C0_LogID LogFieldsIndex = iota
 	C0_CommandID
 	C0_House_ID
 	C0_RuleID
@@ -121,7 +127,7 @@ const (
 	C0_Max
 )
 
-var C0_Name = map[int]string{
+var C0_Name = map[LogFieldsIndex]string{
 	C0_LogID:               "LogID",
 	C0_CommandID:           "CommandID",
 	C0_House_ID:            "House_ID",
@@ -150,7 +156,7 @@ var C0_Name = map[int]string{
 
 // C1字段索引
 const (
-	C1_LogID = iota
+	C1_LogID LogFieldsIndex = iota
 	C1_CommandId
 	C1_House_ID
 	C1_RuleID
@@ -178,7 +184,7 @@ const (
 	C1_Max
 )
 
-var C1_Name = map[int]string{
+var C1_Name = map[LogFieldsIndex]string{
 	C1_LogID:        "LogID",
 	C1_CommandId:    "CommandId",
 	C1_House_ID:     "House_ID",
@@ -208,7 +214,7 @@ const (
 
 // C4字段索引
 const (
-	C4_CommandId = iota
+	C4_CommandId LogFieldsIndex = iota
 	C4_LogID
 	C4_HouseID
 	C4_StrategyId
@@ -235,7 +241,7 @@ const (
 	C4_Max
 )
 
-var C4_Name = map[int]string{
+var C4_Name = map[LogFieldsIndex]string{
 	C4_CommandId:     "CommandId",
 	C4_LogID:         "LogID",
 	C4_HouseID:       "HouseID",
@@ -260,7 +266,7 @@ var C4_Name = map[int]string{
 
 // A8字段索引
 const (
-	A8_LogId = iota
+	A8_LogId LogFieldsIndex = iota
 	A8_HouseId
 	A8_DeviceType
 	A8_DeviceId
@@ -273,7 +279,7 @@ const (
 	A8_Max
 )
 
-var A8_Name = map[int]string{
+var A8_Name = map[LogFieldsIndex]string{
 	A8_LogId:       "LogId",
 	A8_HouseId:     "HouseId",
 	A8_DeviceType:  "DeviceType",
@@ -303,7 +309,7 @@ var (
 	IsCtcc     bool
 )
 
-func GetFileNameFieldsNum(logType int) int {
+func GetFileNameFieldsNum(logType LogType) FileNameIndex {
 	if logType == IndexC2 {
 		return FN_C2_Max
 	}

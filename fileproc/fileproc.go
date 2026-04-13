@@ -180,27 +180,27 @@ func checkFileTypeAndSuffix(fileType int, zipFile string) bool {
 	return checkC10Map(fileType, suffix)
 }
 
-func incFileCnt(index int) {
+func incFileCnt(index global.LogType) {
 	atomic.AddInt64(&FileStat[index].FileNum, 1)
 }
 
-func incFileErrCnt(index int) {
+func incFileErrCnt(index global.LogType) {
 	atomic.AddInt64(&FileStat[index].FileErrNum, 1)
 }
 
-func incLogAllCnt(index int) {
+func incLogAllCnt(index global.LogType) {
 	atomic.AddInt64(&FileStat[index].LogNum.AllCnt, 1)
 }
 
-func incLogValidCnt(index int) {
+func incLogValidCnt(index global.LogType) {
 	atomic.AddInt64(&FileStat[index].LogNum.ValidCnt, 1)
 }
 
-func incLogNullCnt(index int) {
+func incLogNullCnt(index global.LogType) {
 	atomic.AddInt64(&FileStat[index].LogNum.NullCnt, 1)
 }
 
-func incLogInvalidCnt(index int) {
+func incLogInvalidCnt(index global.LogType) {
 	atomic.AddInt64(&FileStat[index].LogNum.InvalidCnt, 1)
 }
 
@@ -230,7 +230,7 @@ func FileNameAuditMapStoreInc(fn string) {
 	FileNameAuditMap[fn] = count
 }
 
-func LogidMapStoreInc(m *sync.Map, id string, index int) {
+func LogidMapStoreInc(m *sync.Map, id string, index global.LogType) {
 	//LogIdInfo
 	value, ok := m.Load(id)
 	if ok {
@@ -707,7 +707,7 @@ func fieldsDataType(id string) (string, bool) {
 	return msg, true
 }
 
-func fieldsLogid(key string, index int) (string, bool) {
+func fieldsLogid(key string, index global.LogType) (string, bool) {
 	msg := ""
 	if key == "" || len(key) != 32 {
 		msg = "字段为空|字段长度不等于32"
@@ -772,7 +772,7 @@ func fieldsPort(key string) (string, bool) {
 	return msg, true
 }
 
-func fieldsMd5(cmdId, key string, logType int) (string, bool) {
+func fieldsMd5(cmdId, key string, logType global.LogType) (string, bool) {
 	msg := ""
 	if key == "" || len(key) != 32 {
 		msg = "字段为空|字段长度不等于32"
@@ -838,7 +838,7 @@ func fieldsA8FileType(key string) (string, bool) {
 	return msg, true
 }
 
-func fieldsFileType(key string, index int) (string, bool) {
+func fieldsFileType(key string, index global.LogType) (string, bool) {
 	msg := ""
 	id, err := strconv.Atoi(key)
 	if err != nil {
@@ -857,7 +857,7 @@ func fieldsFileType(key string, index int) (string, bool) {
 	return msg, true
 }
 
-func fieldsAppProto(key string, index int) (string, bool) {
+func fieldsAppProto(key string, index global.LogType) (string, bool) {
 	msg := ""
 	id, err := strconv.Atoi(key)
 	if err != nil {
@@ -876,7 +876,7 @@ func fieldsAppProto(key string, index int) (string, bool) {
 	return msg, true
 }
 
-func fieldsBusProto(key string, index int) (string, bool) {
+func fieldsBusProto(key string, index global.LogType) (string, bool) {
 	msg := ""
 	id, err := strconv.Atoi(key)
 	if err != nil {
@@ -895,7 +895,7 @@ func fieldsBusProto(key string, index int) (string, bool) {
 	return msg, true
 }
 
-func fieldsDataProto(key string, index int) (string, bool) {
+func fieldsDataProto(key string, index global.LogType) (string, bool) {
 	msg := ""
 	id, err := strconv.Atoi(key)
 	if err != nil {
@@ -915,7 +915,7 @@ func fieldsDataProto(key string, index int) (string, bool) {
 	return msg, true
 }
 
-func procC0Fields(fs []string) (int, string, bool) {
+func procC0Fields(fs []string) (global.LogFieldsIndex, string, bool) {
 	if msg, valid := fieldsLogid(fs[global.C0_LogID], global.IndexC0); !valid {
 		return global.C0_LogID, msg, false
 	}
@@ -959,8 +959,8 @@ func procC0Fields(fs []string) (int, string, bool) {
 	// 取DataCodeGroup
 	var datacodeGroup []dict.DataCode
 	for i := 0; i < datainfoGroup; i++ {
-		if datacode, valid, ret, msg := extractDataCode(fs[global.C0_DataType+3*i : global.C0_DataType+3*i+3]); !valid {
-			return global.C0_DataType + 3*i + ret, msg, false
+		if datacode, valid, ret, msg := extractDataCode(fs[int(global.C0_DataType)+3*i : int(global.C0_DataType)+3*i+3]); !valid {
+			return global.LogFieldsIndex(int(global.C0_DataType) + 3*i + ret), msg, false
 		} else {
 			datacodeGroup = append(datacodeGroup, datacode)
 		}
@@ -984,54 +984,54 @@ func procC0Fields(fs []string) (int, string, bool) {
 		return global.C0_AssetsNum, msg, false
 	}
 
-	if msg, valid := fieldsUpload(fs[global.C0_IsUploadFile+offset]); !valid {
+	if msg, valid := fieldsUpload(fs[int(global.C0_IsUploadFile)+offset]); !valid {
 		return global.C0_IsUploadFile, msg, false
 	}
 
-	if msg, valid := fieldsMd5(fs[global.C0_CommandID], fs[global.C0_FileMD5+offset], global.IndexC0); !valid {
+	if msg, valid := fieldsMd5(fs[global.C0_CommandID], fs[int(global.C0_FileMD5)+offset], global.IndexC0); !valid {
 		return global.C0_FileMD5, msg, false
 	}
 
-	if msg, valid := fieldsNull(fs[global.C0_CurTime+offset]); !valid {
+	if msg, valid := fieldsNull(fs[int(global.C0_CurTime)+offset]); !valid {
 		return global.C0_CurTime, msg, false
 	}
 
-	if msg, valid := fieldsIp(fs[global.C0_SrcIP+offset]); !valid {
+	if msg, valid := fieldsIp(fs[int(global.C0_SrcIP)+offset]); !valid {
 		return global.C0_SrcIP, msg, false
 	}
 
-	if msg, valid := fieldsIp(fs[global.C0_DestIP+offset]); !valid {
+	if msg, valid := fieldsIp(fs[int(global.C0_DestIP)+offset]); !valid {
 		return global.C0_DestIP, msg, false
 	}
 
-	if msg, valid := fieldsPort(fs[global.C0_SrcPort+offset]); !valid {
+	if msg, valid := fieldsPort(fs[int(global.C0_SrcPort)+offset]); !valid {
 		return global.C0_SrcPort, msg, false
 	}
 
-	if msg, valid := fieldsPort(fs[global.C0_DestPort+offset]); !valid {
+	if msg, valid := fieldsPort(fs[int(global.C0_DestPort)+offset]); !valid {
 		return global.C0_DestPort, msg, false
 	}
 
-	if msg, valid := fieldsL4Proto(fs[global.C0_ProtocolType+offset]); !valid {
+	if msg, valid := fieldsL4Proto(fs[int(global.C0_ProtocolType)+offset]); !valid {
 		return global.C0_ProtocolType, msg, false
 	}
 
-	if msg, valid := fieldsAppProto(fs[global.C0_ApplicationProtocol+offset], global.IndexC0); !valid {
+	if msg, valid := fieldsAppProto(fs[int(global.C0_ApplicationProtocol)+offset], global.IndexC0); !valid {
 		return global.C0_ApplicationProtocol, msg, false
 	}
 
-	if msg, valid := fieldsBusProto(fs[global.C0_BusinessProtocol+offset], global.IndexC0); !valid {
+	if msg, valid := fieldsBusProto(fs[int(global.C0_BusinessProtocol)+offset], global.IndexC0); !valid {
 		return global.C0_BusinessProtocol, msg, false
 	}
 
-	if msg, valid := fieldsMatch(fs[global.C0_IsMatchEvent+offset]); !valid {
+	if msg, valid := fieldsMatch(fs[int(global.C0_IsMatchEvent)+offset]); !valid {
 		return global.C0_IsMatchEvent, msg, false
 	}
 
 	return 0, "", true
 }
 
-func procC1Fields(fs []string) (int, string, bool) {
+func procC1Fields(fs []string) (global.LogFieldsIndex, string, bool) {
 	if msg, valid := fieldsLogid(fs[global.C1_LogID], global.IndexC1); !valid {
 		return global.C1_LogID, msg, false
 	}
@@ -1128,7 +1128,7 @@ func procC1Fields(fs []string) (int, string, bool) {
 	return 0, "", true
 }
 
-func procC4Fields(fs []string) (int, string, bool) {
+func procC4Fields(fs []string) (global.LogFieldsIndex, string, bool) {
 	if msg, valid := fieldsCmdId(fs[global.C4_CommandId]); !valid {
 		return global.C4_CommandId, msg, false
 	}
@@ -1218,7 +1218,7 @@ func procC4Fields(fs []string) (int, string, bool) {
 }
 
 // 审计日志只检查logid是否重复
-func procA8Fields(fs []string, index int) (int, string, bool) {
+func procA8Fields(fs []string, index global.LogType) (global.LogFieldsIndex, string, bool) {
 	if msg, valid := fieldsLogid(fs[global.A8_LogId], global.IndexA8); !valid {
 		return global.A8_LogId, msg, false
 	}
@@ -1272,11 +1272,11 @@ func recordC0Info(fs []string) {
 	var codes []dict.DataCode
 	for i := 0; i < datainfoGroup; i++ {
 		var code dict.DataCode
-		code.Class, _ = strconv.Atoi(fs[global.C0_DataType+i*3])
-		code.Level, _ = strconv.Atoi(fs[global.C0_DataType+i*3+1])
-		fields := strings.Split(fs[global.C0_DataType+i*3+2], ",")
+		code.Class, _ = strconv.Atoi(fs[int(global.C0_DataType)+i*3])
+		code.Level, _ = strconv.Atoi(fs[int(global.C0_DataType)+i*3+1])
+		fields := strings.Split(fs[int(global.C0_DataType)+i*3+2], ",")
 		if len(fields) != 2 {
-			fmt.Printf("deal c0 log failed: %s\n", fs[global.C0_DataType+i*3+2])
+			fmt.Printf("deal c0 log failed: %s\n", fs[int(global.C0_DataType)+i*3+2])
 			continue
 		}
 		code.Rule, _ = strconv.Atoi(fields[0])
@@ -1289,9 +1289,9 @@ func recordC0Info(fs []string) {
 	}
 
 	matchNum, _ := strconv.Atoi(fs[global.C0_AssetsNum])
-	application, _ := strconv.Atoi(fs[global.C0_ApplicationProtocol+offset])
-	business, _ := strconv.Atoi(fs[global.C0_BusinessProtocol+offset])
-	cross, _ := strconv.Atoi(fs[global.C0_IsMatchEvent+offset])
+	application, _ := strconv.Atoi(fs[int(global.C0_ApplicationProtocol)+offset])
+	business, _ := strconv.Atoi(fs[int(global.C0_BusinessProtocol)+offset])
+	cross, _ := strconv.Atoi(fs[int(global.C0_IsMatchEvent)+offset])
 	filetype, _ := strconv.Atoi(fs[global.C0_DataFileType])
 
 	info := SampleC0Info{
@@ -1304,7 +1304,7 @@ func recordC0Info(fs []string) {
 		FileSize:    fs[global.C0_AssetsSize],
 	}
 
-	SampleMapUpdateC0(&SampleMap, &SampleMapMutex, fs[global.C0_FileMD5+offset], info)
+	SampleMapUpdateC0(&SampleMap, &SampleMapMutex, fs[int(global.C0_FileMD5)+offset], info)
 }
 
 func recordC1Info(fs []string) {
@@ -1341,7 +1341,7 @@ func recordC4Info(fs []string) {
 	SampleMapUpdateC4(&SampleMap, &SampleMapMutex, fs[global.C4_FileMD5], info)
 }
 
-func recordLogInvalid(line string, info CheckInfo, index int) {
+func recordLogInvalid(line string, info CheckInfo, index global.LogType) {
 	LogCheckMapMutex.Lock()
 	defer LogCheckMapMutex.Unlock()
 
@@ -1354,7 +1354,7 @@ func checkSampleFileName(fullName, fn string) bool {
 
 	fname := global.LogTypeIndex_Name[global.IndexC3]
 
-	if len(fs) != global.FN1_Max {
+	if len(fs) != int(global.FN1_Max) {
 		info := CheckInfo{
 			Reason:   fmt.Sprintf("%s文件名字段个数[%d]不符", fname, len(fs)),
 			Filenmae: fn,
@@ -1363,7 +1363,7 @@ func checkSampleFileName(fullName, fn string) bool {
 		return false
 	}
 
-	for i := 0; i < global.FN1_Max; i++ {
+	for i := global.FN1_Version; i < global.FN1_Max; i++ {
 		var rea string
 		invalid := false
 		switch i {
@@ -1429,13 +1429,13 @@ func checkSampleFileName(fullName, fn string) bool {
 	return true
 }
 
-func checkLogFileName(fn string, logtype int) bool {
+func checkLogFileName(fn string, logtype global.LogType) bool {
 	fs := strings.Split(filepath.Base(fn), "+")
 
 	fname := global.LogTypeIndex_Name[logtype]
 	expectFiledsNum := global.GetFileNameFieldsNum(logtype)
 
-	if len(fs) != expectFiledsNum {
+	if len(fs) != int(expectFiledsNum) {
 		info := CheckInfo{
 			Reason:   fmt.Sprintf("%s文件名字段个数[%d]不符", fname, len(fs)),
 			Filenmae: fn,
@@ -1443,7 +1443,7 @@ func checkLogFileName(fn string, logtype int) bool {
 		recordLogInvalid(fn, info, global.IndexC0)
 		return false
 	}
-	for i := 0; i < expectFiledsNum; i++ {
+	for i := global.FN_Version; i < expectFiledsNum; i++ {
 		var rea string
 		invalid := false
 		switch i {
@@ -1575,7 +1575,7 @@ func procC1Ctx(line, filename string) {
 	fs := strings.Split(line, "|")
 	fname := global.LogTypeIndex_Name[global.IndexC1]
 
-	if len(fs) != global.C1_Max {
+	if len(fs) != int(global.C1_Max) {
 		info := CheckInfo{
 			Reason:   fmt.Sprintf("%s字段个数[%d]不符", fname, len(fs)),
 			Filenmae: filename,
@@ -1606,7 +1606,7 @@ func procC3Ctx(ctx, filename string) {
 func procC4Ctx(line, filename string) {
 	fs := strings.Split(line, "|")
 	fname := global.LogTypeIndex_Name[global.IndexC4]
-	if len(fs) != global.C4_Max {
+	if len(fs) != int(global.C4_Max) {
 		info := CheckInfo{
 			Reason:   fmt.Sprintf("%s字段个数[%d]不符", fname, len(fs)),
 			Filenmae: filename,
@@ -1659,7 +1659,7 @@ func procA8Ctx(line, filename string) {
 	}
 }
 
-func procLogData(ctx string, logType int, filename string) error {
+func procLogData(ctx string, logType global.LogType, filename string) error {
 	switch logType {
 	case global.IndexC0:
 		procC0Ctx(ctx, filename)
@@ -1680,7 +1680,7 @@ func procLogData(ctx string, logType int, filename string) error {
 	return nil
 }
 
-func procTargzFile(filename string, logType int) error {
+func procTargzFile(filename string, logType global.LogType) error {
 	// 打开tar.gz文件
 	f, err := os.Open(filename)
 	if err != nil {
@@ -1731,7 +1731,7 @@ func procTargzFile(filename string, logType int) error {
 	return nil
 }
 
-func ProcLogPath(path string, wg *sync.WaitGroup, logType int) error {
+func ProcLogPath(path string, wg *sync.WaitGroup, logType global.LogType) error {
 	defer wg.Done()
 
 	if exist := global.PathExists(path); !exist {
@@ -1904,7 +1904,8 @@ func AnalyzeLogFile(gptah string, dateList []string, opath string, bak bool) {
 }
 
 func init() {
-	for i := 0; i < global.IndexMax; i++ {
+	var i global.LogType
+	for i = global.IndexC0; i < global.IndexMax; i++ {
 		LogCheckMap[i] = make(map[string]CheckInfo)
 	}
 

@@ -1,0 +1,58 @@
+package audit
+
+import (
+	"os"
+	"strings"
+)
+
+type LogFields struct {
+	LogID       string
+	HouseID     string
+	DeviceType  string
+	DeviceID    string
+	DeviceIP    string
+	FileName    string
+	FileType    string
+	OperateType string
+	OperateTime string
+}
+
+func replaceFilenameByPath(filename string) string {
+	if strings.Contains(filename, "")
+	return strings.ReplaceAll(filename, "\\", "/")
+}
+
+func NewAuditLog(filename string, logType string) LogFields {
+	return LogFields{
+		LogID:       "123456",
+		HouseID:     telnetcmd.Devinfo.Dev_HouseId,
+		DeviceType:  "2", // 数安
+		DeviceID:    telnetcmd.Devinfo.Dev_No,
+		DeviceIP:    telnetcmd.Devinfo.Dev_IP,
+		FileName:    filename,
+		FileType:    "123456",
+		OperateType: "123456",
+		OperateTime: "123456",
+	}
+}
+
+func getAuditFileName() string {
+	return "audit.log"
+}
+
+// 生成审计日志文件
+func GenAuditFile(filename string, auditLog []string) error {
+	file, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	for _, log := range auditLog {
+		err = file.WriteString(log + "\n")
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}

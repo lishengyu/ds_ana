@@ -275,7 +275,8 @@ func CheckLogCnt(ex *excelize.File, index int) {
 
 func getLogNameList(flag int) string {
 	name := ""
-	for i := 0; i < global.IndexMax; i++ {
+	var i global.LogType
+	for i = global.IndexC0; i < global.IndexMax; i++ {
 		exist := flag & (1 << i)
 		if exist != 0 {
 			if name == "" {
@@ -322,7 +323,8 @@ func CheckLogId(ex *excelize.File, name string, m *sync.Map) (int, int) {
 	invalid := 0
 	m.Range(func(key, value interface{}) bool {
 		v := value.(*LogIdInfo)
-		for i := 0; i < global.IndexMax; i++ {
+		var i global.LogType
+		for i = global.IndexC0; i < global.IndexMax; i++ {
 			exist := v.IdFlag & (1 << i)
 			if exist != 0 {
 				record++
