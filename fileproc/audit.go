@@ -1,6 +1,7 @@
 package fileproc
 
 import (
+	"archive/tar"
 	"bufio"
 	"compress/gzip"
 	"ds_ana/global"
@@ -194,6 +195,13 @@ func replaceFilenameByPath(fn, replace string) string {
 	return filename + ".bak"
 }
 
+func replaceFileName(fa AuditFileInfo) string {
+	base := filepath.Base(fa.Filename)
+	logName := transferLogType2LogName(fa.LogType, false)
+
+	return fmt.Sprintf("/home/udpi_log/%s/%s", logName, base)
+}
+
 func newLogField(fa AuditFileInfo, temp Template, str string, operateType string) LogFields {
 	return LogFields{
 		LogID:       generateLogID(telnetcmd.Devinfo.Dev_No, str),
@@ -201,7 +209,7 @@ func newLogField(fa AuditFileInfo, temp Template, str string, operateType string
 		DeviceType:  temp.LogFields.DeviceType,
 		DeviceID:    temp.LogFields.DeviceID,
 		DeviceIP:    temp.LogFields.DeviceIP,
-		FileName:    strings.Replace(fa.Filename, "data", "udpi_log", 1),
+		FileName:    replaceFileName(fa),
 		FileType:    getOperateType(fa.LogType),
 		OperateType: operateType,
 		OperateTime: fmt.Sprintf("%d", getOperateTime(str)),
@@ -282,6 +290,12 @@ func compressFile(srcFile, dstFile string) error {
 	}
 	defer src.Close()
 
+	// 获取源文件信息
+	srcInfo, err := src.Stat()
+	if err != nil {
+		return err
+	}
+
 	// 创建目标文件
 	dst, err := os.Create(dstFile)
 	if err != nil {
@@ -293,8 +307,28 @@ func compressFile(srcFile, dstFile string) error {
 	gz := gzip.NewWriter(dst)
 	defer gz.Close()
 
+	tr := tar.NewWriter(gz)
+	defer tr.Close()
+
+	// 获取文件名（不包含路径）
+	filename := filepath.Base(srcFile)
+
+	// 创建tar文件头
+	header := &tar.Header{
+		Name:    filename,
+		Size:    srcInfo.Size(),
+		Mode:    0644,
+		ModTime: srcInfo.ModTime(),
+	}
+
+	// 写入文件头
+	err = tr.WriteHeader(header)
+	if err != nil {
+		return err
+	}
+
 	// 复制文件内容
-	_, err = io.Copy(gz, src)
+	_, err = io.Copy(tr, src)
 	if err != nil {
 		return err
 	}
@@ -309,8 +343,8 @@ func newAuditFile(fa AuditFileInfo, temp Template, bakDir string) error {
 	logs := NewLogFields(fa, temp, str)
 
 	logger.Logger.Printf("生成审计日志文件: %s, str: %s, filename: %s, logType: %d, bakDir: %s\n", filename, str, fa.Filename, fa.LogType, bakDir)
-	textFile := filepath.Join(bakDir, strings.TrimSuffix(filepath.Base(filename), ".tar.gz"))
 	TargzFile := filepath.Join(bakDir, filepath.Base(filename))
+	textFile := strings.TrimSuffix(filename, ".tar.gz") + ".txt"
 
 	file, err := os.Create(textFile)
 	if err != nil {
@@ -334,27 +368,38 @@ func newAuditFile(fa AuditFileInfo, temp Template, bakDir string) error {
 	return nil
 }
 
+func transferLogType2LogName(logType global.LogType, bak bool) string {
+	switch logType {
+	case global.IndexC0:
+		return global.IdentifyName
+	case global.IndexC1:
+		return global.MonitorName
+	case global.IndexC2:
+		return global.IdentifyRule
+	case global.IndexC3:
+		return global.EvidenceName
+	case global.IndexC4:
+		if bak {
+			return global.KeywordNameB
+		} else {
+			return global.KeywordName
+		}
+	default:
+		fmt.Printf("logType: %d, not support", logType)
+	}
+
+	return ""
+}
+
 func updateDirToAbs(fileToAudit []AuditFileInfo, gpath string, dateList []string, bak bool) []AuditFileInfo {
 	var result []AuditFileInfo
 	var logTypeName string
 
 	for _, fa := range fileToAudit {
-		switch fa.LogType {
-		case global.IndexC0:
-			logTypeName = global.IdentifyName
-		case global.IndexC1:
-			logTypeName = global.MonitorName
-		case global.IndexC2:
-			logTypeName = global.IdentifyRule
-		case global.IndexC3:
-			logTypeName = global.EvidenceName
-		case global.IndexC4:
-			logTypeName = global.KeywordName
-		default:
-			fmt.Printf("logType: %d, not support\n", fa.LogType)
+		logTypeName = transferLogType2LogName(fa.LogType, bak)
+		if logTypeName == "" {
 			continue
 		}
-
 		dirs := getPathsByParam(gpath, logTypeName, dateList, bak)
 
 		var found bool
