@@ -213,6 +213,7 @@ func newLogField(fa AuditFileInfo, temp Template, str string, operateType string
 		FileType:    getOperateType(fa.LogType),
 		OperateType: operateType,
 		OperateTime: fmt.Sprintf("%d", getOperateTime(str)),
+		LogType:     temp.LogFields.LogType,
 	}
 }
 
