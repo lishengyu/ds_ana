@@ -16,7 +16,7 @@ func NewReader(conf string) (*Reader, error) {
 	v.SetConfigFile(conf)
 
 	if err := v.ReadInConfig(); err != nil {
-		return nil, fmt.Errorf("failed to read config file")
+		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
 	return &Reader{v: v}, nil

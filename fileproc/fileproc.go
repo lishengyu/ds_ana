@@ -86,6 +86,11 @@ type LogIdInfo struct {
 	IdFlag int
 }
 
+type FileNameTypeAndCount struct {
+	LogType global.LogType
+	Count   int
+}
+
 var (
 	Md5Map        [global.IndexMax]sync.Map   //MD5表，比对话单和取证文件是否对应
 	LogidMap      sync.Map                    //logid是否重复判断
@@ -104,7 +109,7 @@ var (
 	UrlMap      sync.Map // 按照url进行统计，样本输出的风险类型有哪些
 	UrlMapMutex sync.Mutex
 
-	FileNameMap      map[string]uint8 // 按照文件名进行统计，确认有哪些文件需要生成审计日志
+	FileNameMap      map[string]FileNameTypeAndCount // 按照文件名进行统计，确认有哪些文件需要生成审计日志
 	FileNameMapMutex sync.Mutex
 
 	FileNameAuditMap      map[string]uint8 // 按照文件名进行统计，确认有哪些文件的审计日志生成
@@ -204,17 +209,23 @@ func incLogInvalidCnt(index global.LogType) {
 	atomic.AddInt64(&FileStat[index].LogNum.InvalidCnt, 1)
 }
 
-func FileNameMapStoreInc(fn string) {
+func FileNameMapStoreInc(fn string, logType global.LogType) {
 	FileNameMapMutex.Lock()
 	defer FileNameMapMutex.Unlock()
 
-	count, ok := FileNameMap[fn]
+	v, ok := FileNameMap[fn]
 	if ok {
-		count++
-	} else {
-		count = 1
+		v.Count++
+		FileNameMap[fn] = v
+		return
 	}
-	FileNameMap[fn] = count
+
+	data := FileNameTypeAndCount{
+		LogType: logType,
+		Count:   1,
+	}
+
+	FileNameMap[fn] = data
 }
 
 func FileNameAuditMapStoreInc(fn string) {
@@ -1597,7 +1608,7 @@ func procC1Ctx(line, filename string) {
 }
 
 func procC2Ctx(ctx, filename string) {
-	FileNameMapStoreInc(filepath.Base(filename))
+	FileNameMapStoreInc(filepath.Base(filename), global.IndexC2)
 }
 
 func procC3Ctx(ctx, filename string) {
@@ -1763,7 +1774,7 @@ func ProcLogPath(path string, wg *sync.WaitGroup, logType global.LogType) error 
 				procTargzFile(dir, logType)
 				// 审计文件本身不需要生成审计日志
 				if logType != global.IndexA8 {
-					FileNameMapStoreInc(filepath.Base(d.Name()))
+					FileNameMapStoreInc(filepath.Base(d.Name()), logType)
 				}
 			}
 		}
@@ -1801,7 +1812,7 @@ func ProcEvidencePath(dir string, wg *sync.WaitGroup) error {
 
 		if !d.IsDir() {
 			if strings.HasSuffix(d.Name(), "zip") {
-				FileNameMapStoreInc(filepath.Base(d.Name()))
+				FileNameMapStoreInc(filepath.Base(d.Name()), global.IndexC3)
 				if valid := checkSampleFileName(dir, d.Name()); !valid {
 					incFileErrCnt(global.IndexC3)
 				} else {
@@ -1829,6 +1840,19 @@ func getPathByParam(lpath, logpath, date string, bak bool) string {
 	}
 
 	logger.Logger.Printf("walk path :%s", str)
+	return str
+}
+
+func getPathsByParam(lpath, logpath string, dateList []string, bak bool) []string {
+	var str []string
+
+	for _, date := range dateList {
+		if bak {
+			str = append(str, filepath.Join(lpath, logpath, date, "success"))
+		} else {
+			str = append(str, filepath.Join(lpath, logpath))
+		}
+	}
 	return str
 }
 
@@ -1901,6 +1925,8 @@ func AnalyzeLogFile(gptah string, dateList []string, opath string, bak bool) {
 	}
 
 	fmt.Printf("Check Complete, elapse %.2f 秒\n", time.Since(cur).Seconds())
+
+	GenerateAuditLog(gptah, dateList, bak)
 }
 
 func init() {
@@ -1909,6 +1935,6 @@ func init() {
 		LogCheckMap[i] = make(map[string]CheckInfo)
 	}
 
-	FileNameMap = make(map[string]uint8)
+	FileNameMap = make(map[string]FileNameTypeAndCount)
 	FileNameAuditMap = make(map[string]uint8)
 }

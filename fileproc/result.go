@@ -1030,6 +1030,8 @@ func CheckUrlRisk(ex *excelize.File, index int, name string) {
 	printfItemResult("Url Risk", res, 0)
 }
 
+var auditFiles []AuditFileInfo
+
 func CheckAuditLog(ex *excelize.File, index int, name string) {
 	fmt.Printf("Check Item %03d %s\n", index, name)
 
@@ -1062,20 +1064,25 @@ func CheckAuditLog(ex *excelize.File, index int, name string) {
 	}
 
 	record := 0
-	for filename, count := range FileNameMap {
+	for filename, typeAndCount := range FileNameMap {
 		_, ok := FileNameAuditMap[filename]
 		if !ok {
 			line := []interface{}{
 				filename,
 				"原始日志文件已存在，未找到关联审计记录",
 			}
+			auditFiles = append(auditFiles, AuditFileInfo{
+				LogType:  typeAndCount.LogType,
+				Filename: filename,
+			})
+
 			record++
 			_ = streamWriter.SetRow("A"+strconv.Itoa(record+1), line)
 		} else {
-			if int(count) > len(global.TimeList) {
+			if typeAndCount.Count > len(global.TimeList) {
 				line := []interface{}{
 					filename,
-					fmt.Sprintf("日志文件数量异常: %d", count),
+					fmt.Sprintf("日志文件数量异常: %d", typeAndCount.Count),
 				}
 				record++
 				_ = streamWriter.SetRow("A"+strconv.Itoa(record+1), line)
@@ -1093,10 +1100,10 @@ func CheckAuditLog(ex *excelize.File, index int, name string) {
 			record++
 			_ = streamWriter.SetRow("A"+strconv.Itoa(record+1), line)
 		} else {
-			if count != fileNum*2 {
+			if int(count) != fileNum.Count*2 {
 				line := []interface{}{
 					filename,
-					fmt.Sprintf("日志文件数量：%d,审计日志数量: %d, 不匹配", fileNum, count),
+					fmt.Sprintf("日志文件数量：%d,审计日志数量: %d, 不匹配", fileNum.Count, count),
 				}
 				record++
 				_ = streamWriter.SetRow("A"+strconv.Itoa(record+1), line)
@@ -1106,6 +1113,23 @@ func CheckAuditLog(ex *excelize.File, index int, name string) {
 
 	res := fmt.Sprintf("审计记录: %d, 日志文件: %d, 异常记录: %d\n", len(FileNameAuditMap), len(FileNameMap), record)
 	printfItemResult("Audit Log", res, record)
+}
+
+func GenerateAuditLog(gpath string, dateList []string, bak bool) {
+	if len(auditFiles) == 0 {
+		return
+	}
+
+	fmt.Printf("开始生成缺失审计日志 %s\n", dateList)
+
+	err := GenAuditByFileSlice(auditFiles, gpath, dateList, bak)
+	if err != nil {
+		fmt.Printf("GenerateAuditLog failed:%v\n", err)
+		return
+	}
+
+	res := fmt.Sprintf("缺失审计日志补报%d条", len(auditFiles))
+	printfItemResult("Audit Log Generate", res, 0)
 }
 
 func GenerateResult(excel *excelize.File) {
