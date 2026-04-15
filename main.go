@@ -32,9 +32,11 @@ var (
 )
 
 const (
-	DpiConfFile = "/home/updpi/conf/config.yaml"
-	DpiCmdPort  = "base.cmd_port"
-	DpiIspCode  = "base.isp_code"
+	DpiConfFile      = "/home/updpi/conf/config.yaml"
+	DpiCmdPort       = "base.cmd_port"
+	DpiIspCode       = "base.isp_code"
+	DpiProvince      = "base.province"
+	DpiManufactureID = "base.manufacture_id"
 )
 
 func setLogLevel(Detail, Verbose bool) {
@@ -93,11 +95,15 @@ func readDpiCfg() error {
 	}
 
 	Port = r.GetInt(DpiCmdPort)
-	isp_code := r.GetInt(DpiIspCode)
-	global.IsCtcc = (isp_code == 10)
+	global.IspCode = r.GetInt(DpiIspCode)
+	global.Province = r.GetInt(DpiProvince)
+	global.ManufactureID = r.GetInt(DpiManufactureID)
+
+	global.IsCtcc = (global.IspCode == 10)
 
 	logger.Logger.Printf("dpi_cmd_port:%d", Port)
-	logger.Logger.Printf("isCtcc: %v, isp_code:%d", global.IsCtcc, isp_code)
+	logger.Logger.Printf("isCtcc: %v, isp_code:%d, province:%d, manufacture_id:%d",
+		global.IsCtcc, global.IspCode, global.Province, global.ManufactureID)
 
 	return nil
 }

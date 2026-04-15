@@ -731,16 +731,15 @@ func fieldsLogid(key string, index global.LogType) (string, bool) {
 	}
 
 	var devno string
-	if index == global.IndexA8 {
+	if index != global.IndexA8 {
 		// 审计日志生成的logid和其他日志的方式不同，需要单独处理
-		devno = strings.TrimLeft(key[14:20], "0")
-	} else {
+		// 补报的审计日志LogID有调整，不对devNo进行校验
+		// devno = strings.TrimLeft(key[14:20], "0")
 		devno = strings.TrimLeft(key[8:14], "0")
-	}
-
-	if devno != telnetcmd.Devinfo.Dev_No {
-		msg = fmt.Sprintf("设备编号校验失败: %s != %s", devno, telnetcmd.Devinfo.Dev_No)
-		return msg, false
+		if devno != telnetcmd.Devinfo.Dev_No {
+			msg = fmt.Sprintf("设备编号校验失败: %s != %s", devno, telnetcmd.Devinfo.Dev_No)
+			return msg, false
+		}
 	}
 
 	LogidMapStoreInc(&LogidMap, key, index)
@@ -800,6 +799,14 @@ func fieldsDeviceId(key string) (string, bool) {
 		msg = "字段为空|字段长度大于128"
 		return msg, false
 	}
+	expect := fmt.Sprintf("%02d%02d%02d%s%06s",
+		global.Province, global.IspCode, global.ManufactureID, telnetcmd.Devinfo.Dev_HouseId, telnetcmd.Devinfo.Dev_No)
+
+	if key != expect {
+		msg = fmt.Sprintf("设备编号校验失败: %s != %s", key, expect)
+		return msg, false
+	}
+
 	return msg, true
 }
 

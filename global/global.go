@@ -304,9 +304,12 @@ var (
 )
 
 var (
-	TimeList   []string
-	Manufactor string
-	IsCtcc     bool
+	TimeList      []string
+	Manufactor    string
+	IsCtcc        bool
+	IspCode       int
+	Province      int
+	ManufactureID int
 )
 
 func GetFileNameFieldsNum(logType LogType) FileNameIndex {
