@@ -36,8 +36,8 @@ type AuditFileInfo struct {
 
 type Template struct {
 	FileName  string
-	LogTemp   string
 	LogFields LogFields
+	LogTemp   string
 }
 
 var seq uint64
@@ -156,7 +156,7 @@ func getFirstLine(filename string) string {
 	if !scanner.Scan() {
 		return ""
 	}
-	return scanner.Text()
+	return strings.TrimSpace(scanner.Text())
 }
 
 var uniqID uint64 = 3333
@@ -456,7 +456,7 @@ func GenAuditByFileSlice(fileToAudit []AuditFileInfo, gpath string, dateList []s
 	os.MkdirAll("ds_audit_report", 0755)
 	temp.LogFields, err = LogLine2Fields(temp.LogTemp)
 	if err != nil {
-		return err
+		return fmt.Errorf("file %s, err: %w", temp.FileName, err)
 	}
 
 	fileToAudit = updateDirToAbs(fileToAudit, gpath, dateList, bak)

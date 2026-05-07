@@ -123,14 +123,14 @@ func procZipFile(filename string) string {
 	// 打开zip文件
 	reader, err := zip.OpenReader(filename)
 	if err != nil {
-		logger.Logger.Printf("打开zip文件失败: %s, 错误: %v", filename, err)
+		fmt.Printf("打开zip文件失败: %s, 错误: %v", filename, err)
 		return ""
 	}
 	defer reader.Close()
 
 	// 检查zip文件中是否只有一个文件
 	if len(reader.File) != 1 {
-		logger.Logger.Printf("zip文件 %s 中包含 %d 个文件，期望只有1个文件", filename, len(reader.File))
+		fmt.Printf("zip文件 %s 中包含 %d 个文件，期望只有1个文件", filename, len(reader.File))
 		return ""
 	}
 
@@ -144,12 +144,18 @@ func procZipFile(filename string) string {
 
 	ext := filepath.Ext(file.Name)
 	if ext == "" {
-		logger.Logger.Printf("zip文件 %s 中的文件 %s 没有后缀名", filename, file.Name)
+		fmt.Printf("zip文件 %s 中的文件 %s 没有后缀名", filename, file.Name)
 		return ""
 	}
 
 	// 去掉点号，只保留后缀名
 	ext = strings.TrimPrefix(ext, ".")
+
+	// 判断文件是否为空文件
+	if file.FileHeader.FileInfo().Size() == 0 {
+		fmt.Printf("zip文件 %s 中的文件 %s 为空文件", filename, file.Name)
+		return ""
+	}
 
 	//logger.Logger.Printf("从zip文件 %s 中提取到文件后缀名: %s", filename, ext)
 	return ext
@@ -1614,7 +1620,7 @@ func procC1Ctx(line, filename string) {
 	}
 }
 
-func procC2Ctx(ctx, filename string) {
+func procC2Ctx(filename string) {
 	FileNameMapStoreInc(filepath.Base(filename), global.IndexC2)
 }
 
@@ -1684,7 +1690,7 @@ func procLogData(ctx string, logType global.LogType, filename string) error {
 	case global.IndexC1:
 		procC1Ctx(ctx, filename)
 	case global.IndexC2:
-		procC2Ctx(ctx, filename)
+		//procC2Ctx(ctx, filename)
 	case global.IndexC3:
 		procC3Ctx(ctx, filename)
 	case global.IndexC4:
@@ -1778,7 +1784,11 @@ func ProcLogPath(path string, wg *sync.WaitGroup, logType global.LogType) error 
 					return nil
 				}
 				incFileCnt(logType)
-				procTargzFile(dir, logType)
+				if logType == global.IndexC2 {
+					procC2Ctx(dir)
+				} else {
+					procTargzFile(dir, logType)
+				}
 				// 审计文件本身不需要生成审计日志
 				if logType != global.IndexA8 {
 					FileNameMapStoreInc(filepath.Base(d.Name()), logType)
