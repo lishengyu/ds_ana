@@ -1784,9 +1784,7 @@ func ProcLogPath(path string, wg *sync.WaitGroup, logType global.LogType) error 
 					return nil
 				}
 				incFileCnt(logType)
-				if logType == global.IndexC2 {
-					procC2Ctx(dir)
-				} else {
+				if logType != global.IndexC2 {
 					procTargzFile(dir, logType)
 				}
 				// 审计文件本身不需要生成审计日志
